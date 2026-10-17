@@ -1,0 +1,25 @@
+node_modules/
+dist/
+offline-assets/
+public/downloads/
+output/
+.playwright-cli/
+
+.DS_Store
+.env
+.env.*
+*.local
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+*.db
+*.sqlite*
+*.tar.gz
+panel.env
+auth.json
+
+# Host-specific diagnostics and relay units are not part of the installer release.
+network-diagnostic-report-*.md
+ops/

@@ -1,0 +1,35 @@
+#!/bin/zsh
+set -euo pipefail
+
+APP_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RESOURCE_APP="$APP_ROOT/Resources/app"
+NODE_BIN="$APP_ROOT/Resources/runtime/node"
+LOG_DIR="$HOME/Library/Logs/X3-UI-Offline-Installer"
+LOG_FILE="$LOG_DIR/server.log"
+
+mkdir -p "$LOG_DIR"
+for PORT in {4179..4190}; do
+  URL="http://127.0.0.1:${PORT}"
+  if curl -fsS --max-time 1 "$URL/api/edition" 2>/dev/null | grep -Fq "\"instance\":\"$APP_ROOT\""; then
+    open "$URL"
+    exit 0
+  fi
+  if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
+    continue
+  fi
+  (
+    cd "$RESOURCE_APP"
+    nohup env X3UI_OFFLINE=1 X3UI_APP_INSTANCE="$APP_ROOT" X3UI_BIND_HOST=127.0.0.1 PORT="$PORT" "$NODE_BIN" server.mjs >>"$LOG_FILE" 2>&1 </dev/null &
+  )
+  for _ in {1..30}; do
+    if curl -fsS --max-time 1 "$URL/api/edition" 2>/dev/null | grep -Fq "\"instance\":\"$APP_ROOT\""; then
+      open "$URL"
+      exit 0
+    fi
+    sleep 0.25
+  done
+  break
+done
+
+osascript -e 'display alert "X3-UI Offline Installer" message "本地服务未能启动。请查看 ~/Library/Logs/X3-UI-Offline-Installer/server.log。" as critical'
+exit 1

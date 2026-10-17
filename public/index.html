@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>X3-UI 在线安装器</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="styles.css?v=20261018-remove-1" />
+  </head>
+  <body>
+    <main class="app-shell" data-mobile-view="install">
+      <header class="app-header">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">X3</span>
+          <div>
+            <h1>X3-UI 安装器</h1>
+            <p>固定发行版 3X-UI v3.9.0 · Xray 26.3.27</p>
+          </div>
+        </div>
+        <button id="open-clients" class="secondary-button" type="button">客户端指南</button>
+      </header>
+
+      <nav class="mobile-nav" aria-label="安装工作区">
+        <button type="button" data-view="install" aria-current="page">安装</button>
+        <button type="button" data-view="output">进度与结果</button>
+      </nav>
+
+      <div class="workspace">
+        <section class="install-surface" aria-label="服务器连接信息">
+          <div class="section-heading">
+            <h2>服务器连接</h2>
+            <span id="edition-badge">SSH</span>
+          </div>
+          <p id="offline-note" class="offline-note hidden">安装文件已内置；仅通过 SSH 上传到目标机。</p>
+          <form id="install-form">
+            <div id="online-auth" class="auth-fields">
+              <label>页面访问密码<input name="accessCode" type="password" autocomplete="current-password" /></label>
+              <label>管理操作口令<input name="actionCode" type="password" autocomplete="off" title="创建管理员或移除面板时使用" /></label>
+            </div>
+            <div class="field-grid">
+              <label class="full-field">服务器公网 IPv4<input name="host" required autocomplete="off" inputmode="decimal" placeholder="输入目标服务器 IP" /></label>
+              <label>SSH 端口<input name="port" type="number" value="22" min="1" max="65535" required /></label>
+              <label>SSH 用户名<input name="username" value="root" required autocomplete="username" /></label>
+              <label class="full-field">SSH 密码<input name="password" type="password" required autocomplete="current-password" /></label>
+            </div>
+            <details id="admin-security" class="admin-security">
+              <summary>SSH 安全设置 <span>可选</span></summary>
+              <label class="security-choice"><input name="createAdminUser" type="checkbox" />创建管理员用户</label>
+              <div class="admin-fields">
+                <label>新用户名<input name="adminUsername" value="sysadmin" autocomplete="off" disabled /></label>
+                <label>新用户密码<input name="adminPassword" type="password" minlength="12" maxlength="128" autocomplete="new-password" disabled /></label>
+              </div>
+              <label class="security-choice"><input name="grantSudo" type="checkbox" disabled />授予 sudo -i 权限</label>
+              <label class="security-choice"><input name="disableRootSsh" type="checkbox" disabled />验证后禁用 root SSH 登录</label>
+              <p>禁用 root 前验证新账号和 sudo；后续异常会尝试恢复，并保留自动回滚保护。</p>
+            </details>
+            <div class="form-actions">
+              <button id="install-button" type="submit">安装兼容版 3X-UI</button>
+              <button id="recover-button" class="secondary-button" type="button" title="读取本安装器已装好的面板；节点缺失时会补建">找回结果</button>
+              <button id="remove-button" class="danger-button" type="button" title="备份后移除本安装器管理的 3X-UI">移除 X3-UI</button>
+              <button id="resume-button" class="secondary-button hidden" type="button">继续上次任务</button>
+            </div>
+            <details class="security-details">
+              <summary>安全与版本说明</summary>
+              <p>首次安装使用 root。启用管理员并禁用 root 后，可用新用户和 sudo -i 找回结果。SSH 密码只用于当前任务，不写入磁盘、浏览器存储或日志。</p>
+              <p>移除仅针对本安装器管理的面板，先在目标机建立受限备份；不会删除 SSH 用户、sudo 权限或修改 root 登录设置。</p>
+              <p>Xray 26.3.27 是兼容旧客户端的版本，不含较新内核的后续修复；已有安装不会被自动降级。</p>
+            </details>
+          </form>
+        </section>
+
+        <section class="output-panel" aria-label="安装进度与结果">
+          <div class="section-heading">
+            <h2>安装进度与结果</h2>
+            <span id="output-badge">待开始</span>
+          </div>
+          <p id="empty-output" class="empty-output">尚无安装任务</p>
+          <section id="status" class="hidden" aria-live="polite">
+            <div class="status-row"><span id="status-dot"></span><strong id="status-title">准备中</strong></div>
+            <details id="log-details" open>
+              <summary>任务日志</summary>
+              <pre id="logs"></pre>
+            </details>
+          </section>
+          <section id="result" class="hidden" aria-label="安装结果" aria-live="polite">
+            <div class="result-heading"><h3>安装回执</h3><span id="inbounds"></span></div>
+            <dl class="result-grid">
+              <div><dt>服务状态</dt><dd><strong id="service-state"></strong></dd></div>
+              <div><dt>安装版本</dt><dd><strong id="installed-version"></strong></dd></div>
+              <div class="wide-result"><dt>控制面板</dt><dd><a id="panel-url" target="_blank" rel="noreferrer"></a></dd></div>
+              <div><dt>面板用户名</dt><dd><code id="panel-user"></code></dd></div>
+              <div><dt>面板密码</dt><dd><code id="panel-password"></code></dd></div>
+            </dl>
+            <div id="security-result" class="security-result hidden">
+              <h3>SSH 安全验证</h3>
+              <dl class="result-grid">
+                <div><dt>新用户名</dt><dd id="security-user"></dd></div>
+                <div><dt>SSH 登录</dt><dd id="security-login"></dd></div>
+                <div><dt>sudo -i</dt><dd id="security-sudo"></dd></div>
+                <div><dt>root SSH</dt><dd id="security-root"></dd></div>
+              </dl>
+            </div>
+            <div id="node-result" class="node-result hidden">
+              <div class="node-heading"><h3>VLESS + REALITY 节点</h3><span>TCP</span></div>
+              <code id="node-link"></code>
+              <div class="node-actions">
+                <button id="copy-node" type="button" title="复制节点链接">复制节点链接</button>
+                <button id="download-clash" class="secondary-button" type="button" title="在本机生成 Clash Meta 配置文件">下载 Clash 配置</button>
+              </div>
+              <p id="client-feedback" class="feedback" role="status" aria-live="polite"></p>
+            </div>
+            <p class="security-warning">面板当前使用 HTTP，输入密码前请配置 HTTPS 或经 SSH 隧道访问。节点已在服务端创建并监听；客户端经公网能否连接需另行验证。</p>
+          </section>
+          <section id="remove-result" class="hidden" aria-label="移除结果" aria-live="polite">
+            <h3>移除回执</h3>
+            <dl class="result-grid">
+              <div><dt>3X-UI 服务</dt><dd id="removed-service"></dd></div>
+              <div><dt>备份校验</dt><dd id="removed-sha"></dd></div>
+              <div class="wide-result"><dt>目标机备份文件</dt><dd><code id="removed-backup"></code></dd></div>
+            </dl>
+            <p class="security-warning">备份保留在目标服务器，仅 root 可读取。SSH 用户、sudo 和 root 登录设置未修改。</p>
+          </section>
+        </section>
+      </div>
+    </main>
+
+    <dialog id="client-dialog" aria-labelledby="client-dialog-title">
+      <div class="dialog-header">
+        <h2 id="client-dialog-title">客户端与使用方法</h2>
+        <button id="close-clients" class="secondary-button" type="button">关闭</button>
+      </div>
+      <div class="dialog-content">
+        <p class="notice">以下客户端支持 VLESS + REALITY。版本兼容不等于线路可达；连接超时时请先检查本机到 VPS 的网络路径。</p>
+        <div class="client-list">
+          <div class="client-row">
+            <div><strong>Windows</strong><span>v2rayN 7.25.6 / Clash Verge Rev 2.5.8</span></div>
+            <div class="client-links"><a href="downloads/v2rayN-windows-64.zip" download>v2rayN x64</a><a href="downloads/v2rayN-windows-arm64.zip" download>v2rayN ARM64</a><a href="downloads/Clash.Verge_2.5.8_x64-setup.exe" download>Clash Verge x64</a><a href="downloads/Clash.Verge_2.5.8_arm64-setup.exe" download>Clash Verge ARM64</a></div>
+          </div>
+          <div class="client-row">
+            <div><strong>iOS</strong><span>Hiddify / Shadowrocket 商店版</span></div>
+            <div class="client-links"><a href="https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532" target="_blank" rel="noopener noreferrer">Hiddify · App Store</a><a href="https://apps.apple.com/us/app/shadowrocket/id932747118" target="_blank" rel="noopener noreferrer">Shadowrocket · App Store</a></div>
+          </div>
+          <div class="client-row">
+            <div><strong>Android</strong><span>v2rayNG 2.2.6 / Clash Meta 2.11.35</span></div>
+            <div class="client-links"><a href="downloads/v2rayNG_2.2.6_arm64-v8a.apk" download>v2rayNG ARM64</a><a href="downloads/v2rayNG_2.2.6_armeabi-v7a.apk" download>v2rayNG 32 位</a><a href="downloads/v2rayNG_2.2.6_x86_64.apk" download>v2rayNG x86_64</a><a href="downloads/cmfa-2.11.35-meta-arm64-v8a-release.apk" download>Clash Meta ARM64</a><a href="downloads/cmfa-2.11.35-meta-armeabi-v7a-release.apk" download>Clash Meta 32 位</a><a href="downloads/cmfa-2.11.35-meta-x86_64-release.apk" download>Clash Meta x86_64</a></div>
+          </div>
+          <div class="client-row">
+            <div><strong>macOS</strong><span>v2rayN 7.25.6 / Clash Verge Rev 2.5.8 / Shadowrocket</span></div>
+            <div class="client-links"><a href="downloads/v2rayN-macos-arm64.dmg" download>v2rayN Apple 芯片版</a><a href="downloads/v2rayN-macos-64.dmg" download>v2rayN Intel 版</a><a href="downloads/Clash.Verge_2.5.8_aarch64.dmg" download>Clash Verge Apple 芯片版</a><a href="downloads/Clash.Verge_2.5.8_x64.dmg" download>Clash Verge Intel 版</a><a href="https://apps.apple.com/us/app/shadowrocket/id932747118?platform=mac" target="_blank" rel="noopener noreferrer">Shadowrocket · App Store</a></div>
+          </div>
+        </div>
+        <p id="ios-offline-note" class="guide-intro hidden">iOS 应用由 App Store 分发，不能作为 IPA 文件放入本地包；其余客户端安装文件均在本地包内。</p>
+        <h3 class="usage-heading">使用方法</h3>
+        <p class="guide-intro">选择客户端查看图文步骤。图片里的红色编号标明实际可见的操作位置，右侧编号说明具体动作；未出现在截图中的后续步骤会明确说明。iOS 商店版尚无同版本实拍，使用标明“流程示意”的操作卡。</p>
+        <div class="usage-list">
+          <details class="guide-item">
+            <summary><span>v2rayN</span><small>Windows / macOS · 7.25.6</small></summary>
+            <div class="guide-body">
+              <ol class="guide-steps">
+                <li>在安装回执点击“复制节点链接”。</li>
+                <li>打开 v2rayN，在“配置项”菜单选择“从剪贴板导入分享链接”。</li>
+                <li>选中导入的节点，测试延迟，再按需开启系统代理或 TUN。</li>
+              </ol>
+              <figure class="guide-figure"><a href="guides/v2rayn-7.25.6-macos-main.png" target="_blank" rel="noopener noreferrer" title="打开完整步骤图"><img src="guides/v2rayn-7.25.6-macos-main.png" alt="v2rayN 7.25.6 macOS 实拍标注：复制节点链接，点配置项导入，选中测试后开启代理" loading="lazy" /></a><figcaption>macOS 7.25.6 实拍标注，点图查看完整步骤。Windows 同版本的菜单排列可能不同。</figcaption></figure>
+            </div>
+          </details>
+          <details class="guide-item">
+            <summary><span>v2rayNG</span><small>Android · 2.2.6</small></summary>
+            <div class="guide-body">
+              <ol class="guide-steps">
+                <li>把安装回执中的节点链接安全地传到安卓手机，并在手机上复制。</li>
+                <li>打开 v2rayNG，点击右上角“+”，选择“Import from Clipboard”（从剪贴板导入）。</li>
+                <li>选中新节点，点击右下角连接按钮，并允许系统 VPN 授权。</li>
+              </ol>
+              <figure class="guide-figure phone-shot"><a href="guides/v2rayng-2.2.6-android-import.png" target="_blank" rel="noopener noreferrer" title="打开完整步骤图"><img src="guides/v2rayng-2.2.6-android-import.png" alt="v2rayNG 2.2.6 Android 模拟器实拍标注：从剪贴板导入并点击连接" loading="lazy" /></a><figcaption>Android 2.2.6 实拍标注；点图看完整导入与连接步骤。</figcaption></figure>
+            </div>
+          </details>
+          <details class="guide-item">
+            <summary><span>Clash Verge Rev</span><small>Windows / macOS · 2.5.8</small></summary>
+            <div class="guide-body">
+              <ol class="guide-steps">
+                <li>先在安装回执点击“下载 Clash 配置”，保存 YAML 文件。</li>
+                <li>打开“订阅”→“新建”，把“类型”改为“本地”，输入名称，点击“选择文件”选中该 YAML，再保存。</li>
+                <li>启用新配置，在“代理”中选择节点；需要全设备代理时再开启“系统代理”或 TUN。</li>
+              </ol>
+              <figure class="guide-figure"><a href="guides/clash-verge-2.5.8-macos-local.png" target="_blank" rel="noopener noreferrer" title="打开完整步骤图"><img src="guides/clash-verge-2.5.8-macos-local.png" alt="Clash Verge Rev 2.5.8 macOS 实拍标注：订阅、新建、本地、选择文件并保存" loading="lazy" /></a><figcaption>macOS 2.5.8 实拍标注，点图查看完整步骤。单条 vless:// 链接不能填入订阅 URL。</figcaption></figure>
+            </div>
+          </details>
+          <details class="guide-item">
+            <summary><span>Clash Meta for Android</span><small>Android · 2.11.35</small></summary>
+            <div class="guide-body">
+              <ol class="guide-steps">
+                <li>在安装回执下载 Clash YAML 文件，安全地传到安卓手机。</li>
+                <li>打开“Profile”→ 右上角“+”→“File / Import from File”，选择该 YAML。</li>
+                <li>返回首页选中 Profile，点击“Tap to start”并允许 VPN；在代理组中选择节点。</li>
+              </ol>
+              <div class="guide-gallery">
+                <figure class="guide-figure phone-shot"><a href="guides/clash-meta-2.11.35-android-home.png" target="_blank" rel="noopener noreferrer" title="打开完整步骤图"><img src="guides/clash-meta-2.11.35-android-home.png" alt="Clash Meta for Android 2.11.35 实拍标注：首页点击 Profile，导入后点击 Tap to start" loading="lazy" /></a><figcaption>① 首页进入 Profile；点图查看步骤。</figcaption></figure>
+                <figure class="guide-figure phone-shot"><a href="guides/clash-meta-2.11.35-android-add.png" target="_blank" rel="noopener noreferrer" title="打开完整步骤图"><img src="guides/clash-meta-2.11.35-android-add.png" alt="Clash Meta for Android 2.11.35 实拍标注：File Import from File 导入 YAML" loading="lazy" /></a><figcaption>② 选择 File 导入 YAML；点图查看步骤。</figcaption></figure>
+              </div>
+            </div>
+          </details>
+          <details class="guide-item">
+            <summary><span>Shadowrocket</span><small>macOS · 2.2.92</small></summary>
+            <div class="guide-body">
+              <ol class="guide-steps">
+                <li>在 Mac 上复制安装回执的 VLESS 节点链接。</li>
+                <li>打开 Shadowrocket，点击右上角“+”；在“添加节点”页把“类型”从 Subscribe 改为 VLESS。</li>
+                <li>核对端口、REALITY 的 SNI、公钥和短 ID，再保存、选中节点并测试连接。</li>
+              </ol>
+              <figure class="guide-figure"><a href="guides/shadowrocket-2.2.92-macos-add.png" target="_blank" rel="noopener noreferrer" title="打开完整步骤图"><img src="guides/shadowrocket-2.2.92-macos-add.png" alt="Shadowrocket 2.2.92 macOS 实拍标注：选择 VLESS，核对参数并保存" loading="lazy" /></a><figcaption>macOS 2.2.92 空白添加页实拍标注；点图查看步骤。未展示、修改或保存现有节点。</figcaption></figure>
+            </div>
+          </details>
+          <details class="guide-item">
+            <summary><span>Shadowrocket</span><small>iOS · App Store 2.2.92</small></summary>
+            <div class="guide-body">
+              <ol class="guide-steps">
+                <li>把安装回执的完整 VLESS 链接安全地传到 iPhone，并在手机上复制。</li>
+                <li>打开 Shadowrocket，使用添加或导入入口粘贴链接；核对 VLESS、TCP 与 REALITY 参数。</li>
+                <li>选中节点，开启连接并允许 iOS 的 VPN 配置请求。</li>
+              </ol>
+              <figure class="guide-figure"><a href="guides/shadowrocket-ios-flow.png" target="_blank" rel="noopener noreferrer" title="打开完整流程图"><img src="guides/shadowrocket-ios-flow.png" alt="Shadowrocket iOS 流程示意：复制链接、添加节点、核对参数、连接并允许 VPN" loading="lazy" /></a><figcaption>点图查看完整流程。非 iPhone 实拍；当前商店版按钮位置未实机核验。</figcaption></figure>
+            </div>
+          </details>
+          <details class="guide-item">
+            <summary><span>Hiddify</span><small>iOS · App Store 4.0</small></summary>
+            <div class="guide-body">
+              <ol class="guide-steps">
+                <li>把安装回执的 VLESS 链接安全地传到 iPhone，并在手机上复制。</li>
+                <li>在 Hiddify 的添加配置入口选择从剪贴板导入，并检查导入的节点信息。</li>
+                <li>选择该配置，点击连接并允许 iOS 的 VPN 配置请求。</li>
+              </ol>
+              <figure class="guide-figure"><a href="guides/hiddify-ios-flow.png" target="_blank" rel="noopener noreferrer" title="打开完整流程图"><img src="guides/hiddify-ios-flow.png" alt="Hiddify iOS 流程示意：复制链接、添加配置、检查节点、连接并允许 VPN" loading="lazy" /></a><figcaption>点图查看完整流程。非 iPhone 实拍；当前商店版按钮位置未实机核验。</figcaption></figure>
+            </div>
+          </details>
+        </div>
+        <p class="notice">节点导入成功不代表线路可达。若仅这一条超时，请先停止其他全局代理再测，或对比同一设备的物理网络与中转路径。</p>
+      </div>
+    </dialog>
+    <dialog id="remove-dialog" aria-labelledby="remove-dialog-title">
+      <div class="dialog-header"><h2 id="remove-dialog-title">确认移除 3X-UI</h2></div>
+      <div class="dialog-content">
+        <p>将从 <strong id="remove-target"></strong> 移除本安装器管理的面板及节点。操作前会在目标机创建备份；SSH 账号和 root 登录设置不变。</p>
+        <div class="dialog-actions">
+          <button id="cancel-remove" class="secondary-button" type="button">取消</button>
+          <button id="confirm-remove" class="danger-button" type="button">确认移除</button>
+        </div>
+      </div>
+    </dialog>
+    <script src="app.js?v=20261018-remove-1"></script>
+  </body>
+</html>

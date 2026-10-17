@@ -1,0 +1,16 @@
+{
+  "name": "x3ui-local-installer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "test": "node --test",
+    "verify:offline": "node scripts/fetch-offline-assets.mjs --verify-only",
+    "build:offline:mac": "bash scripts/build-offline-macos-app.sh"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "ssh2": "^1.17.0"
+  }
+}

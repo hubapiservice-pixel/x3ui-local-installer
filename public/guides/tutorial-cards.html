@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>客户端图文操作卡</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; color: #17251e; background: #dce6df; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .sheet { width: 1200px; min-height: 790px; padding: 44px; background: #f8faf7; }
+    .head { display: flex; justify-content: space-between; align-items: end; gap: 20px; border-bottom: 3px solid #1f6849; padding-bottom: 22px; }
+    .eyebrow { color: #236b4a; font-size: 21px; font-weight: 750; }
+    h1 { margin: 4px 0 0; font-size: 46px; line-height: 1.15; }
+    .version { color: #52645a; font-size: 19px; font-weight: 650; white-space: nowrap; }
+    .intro { margin: 24px 0 28px; font-size: 23px; line-height: 1.45; }
+    .body { display: grid; grid-template-columns: minmax(0, 720px) minmax(0, 1fr); gap: 32px; align-items: start; }
+    .body.phone { grid-template-columns: 480px minmax(0, 1fr); }
+    .screen { position: relative; width: 100%; overflow: hidden; border: 2px solid #cad8cc; border-radius: 10px; background: #fff; }
+    .screen img { display: block; width: 100%; height: auto; }
+    .screen.phone { width: 440px; margin: 0 auto; }
+    .target { position: absolute; display: grid; place-items: center; width: 32px; height: 32px; border: 3px solid #fff; border-radius: 50%; color: #fff; background: #c33327; box-shadow: 0 0 0 3px #c33327, 0 3px 8px #0006; font-size: 17px; font-weight: 800; transform: translate(-50%, -50%); }
+    .steps { display: grid; gap: 18px; }
+    .step { display: grid; grid-template-columns: 43px 1fr; gap: 14px; align-items: start; padding: 15px 16px; border: 1px solid #d2e0d4; border-radius: 7px; background: #fff; }
+    .step b { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; color: #fff; background: #216a49; font-size: 22px; }
+    .step strong { display: block; font-size: 24px; line-height: 1.3; }
+    .step p { margin: 5px 0 0; color: #3e5346; font-size: 19px; line-height: 1.5; }
+    .foot { margin-top: 26px; padding: 17px 20px; border-left: 5px solid #b77722; background: #fff5e6; color: #594b34; font-size: 18px; line-height: 1.5; }
+    .flow { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+    .flow .step { min-height: 162px; }
+    .flow-note { margin-top: 22px; color: #8a4b1e; font-size: 19px; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main id="sheet" class="sheet"></main>
+  <script>
+    const guides = {
+      "v2rayn-7.25.6-macos-main": {
+        title: "v2rayN 导入并连接", version: "macOS 实拍 7.25.6 / Windows 同版本", kind: "desktop",
+        intro: "先复制安装回执里的 VLESS 节点链接，再按编号操作。",
+        steps: [
+          ["复制节点链接", "在安装完成的回执中点击“复制节点链接”。"],
+          ["打开“配置项”", "点截图左上角“配置项”，选“从剪贴板导入分享链接”。"],
+          ["选中并测试", "导入后选中列表中的新节点，使用延迟测试确认可达。"],
+          ["开启代理", "需要系统流量经过节点时，再开启系统代理或 TUN。"]
+        ],
+        targets: [[2, 9.5, 10]],
+        foot: "截图只显示配置项入口；Windows 的菜单排列可能不同。导入成功不等于公网线路可达。"
+      },
+      "v2rayng-2.2.6-android-import": {
+        title: "v2rayNG 导入并连接", version: "Android 模拟器实拍 2.2.6", kind: "phone",
+        intro: "把完整 VLESS 链接复制到手机剪贴板，不要只复制节点名称。",
+        steps: [
+          ["复制 VLESS 链接", "在安装回执点击“复制节点链接”，将完整链接安全传到手机并复制。"],
+          ["从剪贴板导入", "在 Config 页点右上角“+”，再点图中 Import from Clipboard。"],
+          ["选择新节点", "导入后回到列表，点选刚出现的节点。"],
+          ["开始连接", "点右下角三角形按钮，首次连接时允许 Android VPN 授权。"]
+        ],
+        targets: [[2, 43, 12], [4, 86, 90]],
+        foot: "红色编号圈出当前截图中实际可见的按钮；第 1、3 步发生在其他页面。"
+      },
+      "clash-verge-2.5.8-macos-local": {
+        title: "Clash Verge 导入配置", version: "macOS 实拍 2.5.8 / Windows 同版本", kind: "desktop",
+        intro: "Clash 使用安装回执中的 YAML 配置文件；不要把 vless:// 单链接填进订阅 URL。",
+        steps: [
+          ["下载 YAML", "在安装回执点击“下载 Clash 配置”，保存到本机。"],
+          ["进入订阅", "点左侧“订阅”，再点右上角“新建”。"],
+          ["选择本地", "在新建配置弹窗把“类型”设为“本地”。"],
+          ["选择文件并保存", "点“选择文件”选刚下载的 YAML，输入名称后点“保存”。"],
+          ["启用节点", "在“订阅”启用新配置，再去“代理”选节点，按需开系统代理或 TUN。"]
+        ],
+        targets: [[2, 13, 34], [3, 55, 39], [4, 31, 62]],
+        foot: "图中是创建本地配置的弹窗；保存后的“代理”页未在这张实拍图里。"
+      },
+      "clash-meta-2.11.35-android-home": {
+        title: "Clash Meta 进入配置", version: "Android 模拟器实拍 2.11.35", kind: "phone",
+        intro: "先将安装回执下载的 Clash YAML 文件保存到手机。",
+        steps: [
+          ["准备 YAML", "在安装回执下载 Clash 配置文件，将 .yaml 文件传到手机。"],
+          ["打开 Profile", "点图中 Profile，进入配置列表，再点右上角“+”。"],
+          ["启动代理", "导入并选中配置后返回首页，点 Tap to start，允许 VPN 授权。"]
+        ],
+        targets: [[2, 8, 28], [3, 8, 17]],
+        foot: "先导入并选中配置，再点击 Tap to start；否则首页会显示 Not selected。"
+      },
+      "clash-meta-2.11.35-android-add": {
+        title: "Clash Meta 导入文件", version: "Android 模拟器实拍 2.11.35", kind: "phone",
+        intro: "这是上一张图点击 Profile → 右上角“+”后的页面。",
+        steps: [
+          ["点 File", "点图中 File / Import from File；不要选 URL。"],
+          ["选择 YAML", "从手机文件中找到安装回执下载的 .yaml 文件。"],
+          ["选中配置", "回到 Profile 列表，点选刚导入的配置。"],
+          ["返回并连接", "回首页点 Tap to start，允许 VPN，然后在代理组中选节点。"]
+        ],
+        targets: [[1, 8, 12]],
+        foot: "图中展示的是文件导入入口；选文件、连接和代理组在后续页面。"
+      },
+      "shadowrocket-2.2.92-macos-add": {
+        title: "Shadowrocket 添加节点", version: "macOS 实拍 2.2.92", kind: "desktop",
+        intro: "先复制完整 VLESS 链接。这里展示的是添加节点页，未保存或修改任何已有节点。",
+        steps: [
+          ["打开添加节点", "在首页点右上角“+”，进入图中的“添加节点”页。"],
+          ["选择 VLESS", "点图中“类型”行，将当前 Subscribe 改为 VLESS。"],
+          ["核对参数", "按安装回执填写地址、端口、UUID、TCP、REALITY、SNI、公钥和短 ID。"],
+          ["保存并测试", "确认信息无误后点右上角“保存”，选中节点再测连接。"]
+        ],
+        targets: [[2, 44, 15], [4, 81, 9]],
+        foot: "本图是空白编辑页，参数输入控件会随“类型”选择而变化；不要把节点密钥公开到截图。"
+      },
+      "shadowrocket-ios-flow": {
+        title: "Shadowrocket iPhone 使用流程", version: "iOS App Store 版 · 流程示意", kind: "flow",
+        intro: "以下是操作顺序示意，不是 iPhone 实机截图；商店版按钮位置可能变化。",
+        steps: [
+          ["复制完整链接", "在安装回执复制 vless:// 开头的完整节点链接并传到 iPhone。"],
+          ["打开添加入口", "在 Shadowrocket 首页找“+”或添加节点入口，按当前版本提供的导入方式粘贴链接。"],
+          ["核对节点", "确认类型 VLESS、传输 TCP、REALITY，以及地址、端口、SNI、公钥和短 ID。"],
+          ["连接并授权", "选择新节点，打开连接开关；首次使用按 iOS 提示允许 VPN 配置。"]
+        ],
+        foot: "如果当前商店版没有相同名称的入口，请以实际界面为准，不要把链接填入订阅 URL。"
+      },
+      "hiddify-ios-flow": {
+        title: "Hiddify iPhone 使用流程", version: "iOS App Store 版 · 流程示意", kind: "flow",
+        intro: "以下是操作顺序示意，不是 iPhone 实机截图；商店版按钮位置可能变化。",
+        steps: [
+          ["复制完整链接", "在安装回执复制 vless:// 开头的完整节点链接并传到 iPhone。"],
+          ["添加配置", "在 Hiddify 首页找到添加配置入口，选择从剪贴板导入或粘贴链接。"],
+          ["检查导入结果", "确认新配置中显示所创建的 VLESS 节点；若未显示，重新复制完整链接。"],
+          ["选择并连接", "选中新配置，点击连接；首次使用按 iOS 提示允许 VPN 配置。"]
+        ],
+        foot: "这是未实机核验的 iOS 流程图，不能当作该版本的按钮截图。"
+      }
+    };
+    const id = new URLSearchParams(location.search).get("id");
+    const guide = guides[id];
+    if (!guide) throw new Error("Unknown guide: " + id);
+    const escape = value => value.replace(/[&<>"']/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[char]));
+    const steps = guide.steps.map(([title, detail], index) => `<div class="step"><b>${index + 1}</b><div><strong>${escape(title)}</strong><p>${escape(detail)}</p></div></div>`).join("");
+    const markers = (guide.targets || []).map(([number, x, y]) => `<span class="target" style="left:${x}%;top:${y}%" aria-hidden="true">${number}</span>`).join("");
+    const picture = guide.kind === "flow" ? `<div class="flow">${steps}</div>` : `<div class="body ${guide.kind === "phone" ? "phone" : ""}"><div class="screen ${guide.kind === "phone" ? "phone" : ""}"><img src="raw/${id}.png" alt="${escape(guide.title)}真实界面">${markers}</div><div class="steps">${steps}</div></div>`;
+    document.querySelector("#sheet").innerHTML = `<div class="head"><div><div class="eyebrow">X3-UI 客户端操作图</div><h1>${escape(guide.title)}</h1></div><span class="version">${escape(guide.version)}</span></div><p class="intro">${escape(guide.intro)}</p>${picture}<div class="foot">${escape(guide.foot)}</div>`;
+  </script>
+</body>
+</html>

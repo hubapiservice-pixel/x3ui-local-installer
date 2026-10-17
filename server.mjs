@@ -8,6 +8,7 @@ import express from "express";
 import { Client } from "ssh2";
 import { applySecurity, securityInput } from "./security.mjs";
 import { REMOVE_SCRIPT, parseRemoveResult } from "./remove.mjs";
+import { parseProbeInput, probeVlessReality, PROBE_XRAY_SHA256 } from "./probe.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -19,6 +20,8 @@ const OFFLINE_MODE = process.env.X3UI_OFFLINE === "1";
 const APP_INSTANCE = process.env.X3UI_APP_INSTANCE || "";
 const OFFLINE_RELEASE_DIR = path.join(__dirname, "offline-assets", "release");
 const OFFLINE_BOOTSTRAP = path.join(__dirname, "release", "offline-v3.9.0-xray-26.3.27", "bootstrap.sh");
+const ONLINE_BOOTSTRAP = path.join(__dirname, "release", "v3.9.0-xray-26.3.27", "bootstrap.sh");
+const PROBE_XRAY_BIN = path.join(__dirname, "offline-assets", "tools", "xray-macos-arm64");
 const OFFLINE_FILES = {
   x86_64: [
     ["x-ui-linux-amd64.tar.gz", "d7cbe0bf6358ee0d2117c24fd2efb483502e411d38e2ea59bd0bf5e7a3e39390"],
@@ -29,10 +32,10 @@ const OFFLINE_FILES = {
     ["xray-linux-arm64", "c2d20a7045250497083afea0d79db0672f6c89a25aaaf37c92de034d6b764b04"]
   ]
 };
-const BOOTSTRAP_SHA256 = "180596e5351b211af66f927aa381e1334f38bcba9e6f2182a11f8ead9e40485d";
 const ACCESS_PASSWORD = process.env.X3UI_WEB_ACCESS_PASSWORD || "";
 const ADMIN_ACTION_PASSWORD = process.env.X3UI_ADMIN_ACTION_PASSWORD || "";
 const MAX_ACTIVE_JOBS = 2;
+let probeRunning = false;
 
 if (process.env.X3UI_REQUIRE_ACCESS === "1" && !ACCESS_PASSWORD) {
   throw new Error("X3UI_REQUIRE_ACCESS=1 时必须设置 X3UI_WEB_ACCESS_PASSWORD。");
@@ -155,6 +158,26 @@ async function uploadOfflineRelease(conn, job) {
   }
 }
 
+async function uploadOnlineBootstrap(conn, job) {
+  const expected = await fileSha256(ONLINE_BOOTSTRAP);
+  const staging = await execRemote(conn, "mktemp -d /tmp/x3ui-online.XXXXXXXX");
+  const remoteDir = staging.stdout.trim();
+  if (staging.code !== 0 || !/^\/tmp\/x3ui-online\.[A-Za-z0-9]+$/.test(remoteDir)) {
+    throw new Error("无法在目标机创建安全的临时上传目录。");
+  }
+  const remote = `${remoteDir}/bootstrap.sh`;
+  const sftp = await new Promise((resolve, reject) => conn.sftp((error, session) => error ? reject(error) : resolve(session)));
+  try {
+    await new Promise((resolve, reject) => sftp.fastPut(ONLINE_BOOTSTRAP, remote, (error) => error ? reject(error) : resolve()));
+  } finally {
+    sftp.end();
+  }
+  const verify = await execRemote(conn, `printf '%s  %s\\n' ${shellQuote(expected)} ${shellQuote(remote)} | sha256sum -c -`);
+  if (verify.code !== 0) throw new Error("在线安装脚本上传校验失败；没有执行安装。");
+  pushLog(job, "已上传并校验当前在线安装脚本。");
+  return remoteDir;
+}
+
 function connectSsh(input, expectedHostKey) {
   return new Promise((resolve, reject) => {
     const conn = new Client();
@@ -218,7 +241,7 @@ function parseInstallResult(output, host) {
   const allow = new Set([
     "PANEL_URL", "PANEL_PORT", "PANEL_PATH", "PANEL_USERNAME", "PANEL_PASSWORD",
     "XUI_PORT", "XUI_WEBBASEPATH", "XUI_USERNAME", "XUI_PASSWORD", "USERNAME", "PASSWORD",
-    "X3UI_RELEASE_VERSION", "X3UI_CORE_VERSION"
+    "X3UI_RELEASE_VERSION", "X3UI_CORE_VERSION", "PANEL_TLS"
   ]);
   const values = {};
   for (const line of output.split(/\r?\n/)) {
@@ -233,14 +256,18 @@ function parseInstallResult(output, host) {
     panelUrl: values.PANEL_URL || (port ? `http://${host}:${port}${normalizedPath}` : null),
     username: values.PANEL_USERNAME || values.XUI_USERNAME || values.USERNAME || null,
     password: values.PANEL_PASSWORD || values.XUI_PASSWORD || values.PASSWORD || null,
+    tls: values.PANEL_TLS || (values.PANEL_URL?.startsWith("https://") ? "configured" : "none"),
     releaseVersion: values.X3UI_RELEASE_VERSION || null,
     coreVersion: values.X3UI_CORE_VERSION || null
   };
 }
 
-async function panelRequest(conn, basePath, route, { method = "GET", body, cookie, csrf } = {}) {
-  const url = `http://127.0.0.1:2053${basePath}${route}`;
-  const args = ["curl", "--silent", "--show-error", "--max-time", "15", "--dump-header", "-", "--write-out", "\\n__HTTP_STATUS__=%{http_code}", "--request", method];
+async function panelRequest(conn, panel, route, { method = "GET", body, cookie, csrf } = {}) {
+  const address = new URL(panel.panelUrl);
+  const url = `${address.origin}${address.pathname.replace(/\/+$/, "")}${route}`;
+  const args = ["curl", "--silent", "--show-error", "--noproxy", "*", "--max-time", "15", "--dump-header", "-", "--write-out", "\\n__HTTP_STATUS__=%{http_code}", "--request", method];
+  args.push("--resolve", `${address.hostname}:${address.port || (address.protocol === "https:" ? 443 : 80)}:127.0.0.1`);
+  if (address.protocol === "https:" && panel.tls === "self-signed") args.push("--cacert", "/etc/x-ui/panel.crt");
   if (body) args.push("--header", "Content-Type: application/json", "--data-binary", JSON.stringify(body));
   if (cookie) args.push("--header", `Cookie: ${cookie}`);
   if (csrf) args.push("--header", `X-CSRF-Token: ${csrf}`);
@@ -287,11 +314,10 @@ function nodeFromInbound(inbound, host) {
 }
 
 async function createRealityNode(conn, panel, host) {
-  const basePath = new URL(panel.panelUrl).pathname.replace(/\/+$/, "");
   let initialCsrf;
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
-      initialCsrf = await panelRequest(conn, basePath, "/csrf-token");
+      initialCsrf = await panelRequest(conn, panel, "/csrf-token");
       break;
     } catch (error) {
       if (attempt === 9) throw error;
@@ -301,23 +327,23 @@ async function createRealityNode(conn, panel, host) {
   if (!initialCsrf.cookie || typeof initialCsrf.data.obj !== "string") {
     throw new Error("面板未返回登录前的 CSRF 令牌和会话 Cookie。");
   }
-  const login = await panelRequest(conn, basePath, "/login", {
+  const login = await panelRequest(conn, panel, "/login", {
     method: "POST",
     body: { username: panel.username, password: panel.password },
     cookie: initialCsrf.cookie,
     csrf: initialCsrf.data.obj
   });
   const sessionCookie = login.cookie || initialCsrf.cookie;
-  const csrf = await panelRequest(conn, basePath, "/csrf-token", { cookie: sessionCookie });
+  const csrf = await panelRequest(conn, panel, "/csrf-token", { cookie: sessionCookie });
   if (typeof csrf.data.obj !== "string" || !csrf.data.obj) throw new Error("面板未返回 CSRF 令牌。");
 
   const remark = `X3UI-${host}`;
   const session = { cookie: csrf.cookie || sessionCookie, csrf: csrf.data.obj };
-  const existing = await panelRequest(conn, basePath, "/panel/api/inbounds/list", session);
+  const existing = await panelRequest(conn, panel, "/panel/api/inbounds/list", session);
   if (!Array.isArray(existing.data.obj)) throw new Error("无法读取现有入站列表，未继续创建。");
   const previous = existing.data.obj.find((inbound) => inbound.remark === remark);
   if (previous) {
-    const readback = await panelRequest(conn, basePath, `/panel/api/inbounds/get/${previous.id}`, session);
+    const readback = await panelRequest(conn, panel, `/panel/api/inbounds/get/${previous.id}`, session);
     const node = nodeFromInbound(readback.data.obj, host);
     const listening = await execRemote(conn, `ss -ltnH 'sport = :${node.port}'`);
     if (!listening.stdout.trim()) throw new Error("已有节点未监听，请检查 Xray 状态。");
@@ -339,10 +365,10 @@ async function createRealityNode(conn, panel, host) {
     streamSettings: { network: "tcp", security: "reality", tcpSettings: {}, realitySettings: { show: false, dest: `${sni}:443`, xver: 0, serverNames: [sni], privateKey, shortIds: [shortId] } },
     sniffing: { enabled: true, destOverride: ["http", "tls"] }
   };
-  const added = await panelRequest(conn, basePath, "/panel/api/inbounds/add", { method: "POST", body: payload, ...session });
+  const added = await panelRequest(conn, panel, "/panel/api/inbounds/add", { method: "POST", body: payload, ...session });
   const inboundId = added.data.obj?.id;
   if (!Number.isInteger(inboundId)) throw new Error("面板未返回新入站 ID，请在面板核对是否已创建，避免重复添加。");
-  const readback = await panelRequest(conn, basePath, `/panel/api/inbounds/get/${inboundId}`, session);
+  const readback = await panelRequest(conn, panel, `/panel/api/inbounds/get/${inboundId}`, session);
   if (readback.data.obj?.port !== port || readback.data.obj?.protocol !== "vless") {
     throw new Error("新入站的面板读回校验失败。");
   }
@@ -447,14 +473,10 @@ async function install(job, input, security) {
             `X3UI_LOCAL_ASSET_DIR=${shellQuote(remoteDir)} X3UI_PUBLIC_HOST=${shellQuote(input.host)} X3UI_PANEL_PORT=2053 bash ${shellQuote(`${remoteDir}/bootstrap.sh`)}`
           ].join("; ");
         } else {
+          remoteDir = await uploadOnlineBootstrap(conn, job);
           installer = [
             "set -euo pipefail",
-            "tmp=$(mktemp)",
-            `curl -fsS --connect-timeout 15 '${MIRROR_BASE_URL}/bootstrap.sh' -o \"$tmp\"`,
-            `printf '${BOOTSTRAP_SHA256}  %s\\n' \"$tmp\" | sha256sum -c -`,
-            "chmod 700 \"$tmp\"",
-            `X3UI_BASE_URL='${MIRROR_BASE_URL}' X3UI_PUBLIC_HOST='${input.host}' X3UI_PANEL_PORT=2053 bash \"$tmp\"`,
-            "rm -f \"$tmp\""
+            `X3UI_BASE_URL=${shellQuote(MIRROR_BASE_URL)} X3UI_PUBLIC_HOST=${shellQuote(input.host)} X3UI_PANEL_PORT=2053 bash ${shellQuote(`${remoteDir}/bootstrap.sh`)}`
           ].join("; ");
         }
         const result = await execRemote(conn, `bash -lc ${shellQuote(installer)}`, (text) => {
@@ -464,7 +486,9 @@ async function install(job, input, security) {
           throw new Error("固定发行包安装未完成，请查看安装日志。目标机可能留有部分安装文件，请勿直接重复覆盖。");
         }
         if (remoteDir) {
-          const stagedNames = ["bootstrap.sh", ...Object.values(OFFLINE_FILES).flat().map(([name]) => name)];
+          const stagedNames = OFFLINE_MODE
+            ? ["bootstrap.sh", ...Object.values(OFFLINE_FILES).flat().map(([name]) => name)]
+            : ["bootstrap.sh"];
           const cleanup = await execRemote(conn, `rm -f -- ${stagedNames.map((name) => shellQuote(`${remoteDir}/${name}`)).join(" ")} && rmdir -- ${shellQuote(remoteDir)}`);
           if (cleanup.code !== 0) pushLog(job, "安装成功，但目标机临时上传目录未清理。");
         }
@@ -589,6 +613,30 @@ function queueJob(req, res, worker, kind) {
 app.post("/api/install", requireAccess, (req, res) => queueJob(req, res, install, "install"));
 app.post("/api/recover", requireAccess, (req, res) => queueJob(req, res, recover, "recover"));
 app.post("/api/remove", requireAccess, (req, res) => queueJob(req, res, remove, "remove"));
+app.post("/api/probe", async (req, res) => {
+  if (!OFFLINE_MODE || process.platform !== "darwin" || process.arch !== "arm64") {
+    return res.status(404).json({ error: "本机节点测试仅在 Apple 芯片本地版中提供。" });
+  }
+  if (probeRunning) return res.status(429).json({ error: "已有节点测试正在运行。" });
+  try {
+    parseProbeInput(req.body?.link, req.body?.networkInterface);
+    const info = await stat(PROBE_XRAY_BIN);
+    if (!info.isFile() || await fileSha256(PROBE_XRAY_BIN) !== PROBE_XRAY_SHA256) {
+      throw new Error("本机 Xray 测试内核缺失或校验失败。请使用完整的离线安装包。");
+    }
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+  probeRunning = true;
+  try {
+    const result = await probeVlessReality(req.body.link, req.body.networkInterface, PROBE_XRAY_BIN);
+    res.json(result);
+  } catch (error) {
+    res.status(422).json({ error: error.message });
+  } finally {
+    probeRunning = false;
+  }
+});
 app.get("/api/edition", (_req, res) => res.json({
   edition: OFFLINE_MODE ? "offline" : "online",
   ...(APP_INSTANCE ? { instance: APP_INSTANCE } : {})

@@ -14,6 +14,7 @@ const outputBadge = document.querySelector("#output-badge");
 const logDetails = document.querySelector("#log-details");
 const clientDialog = document.querySelector("#client-dialog");
 const removeDialog = document.querySelector("#remove-dialog");
+const probeDialog = document.querySelector("#probe-dialog");
 const createAdminUser = form.elements.namedItem("createAdminUser");
 const grantSudo = form.elements.namedItem("grantSudo");
 const disableRootSsh = form.elements.namedItem("disableRootSsh");
@@ -27,6 +28,7 @@ const lastJobKey = "x3ui-last-job";
 fetch("api/edition", { cache: "no-store" }).then((response) => response.json()).then((data) => {
   if (data.edition !== "offline") return;
   isOffline = true;
+  document.querySelector("#open-probe").classList.remove("hidden");
   document.title = "X3-UI 本地安装器";
   document.querySelector("#edition-badge").textContent = "本地版";
   document.querySelector("#online-auth").classList.add("hidden");
@@ -136,6 +138,11 @@ async function poll(id, failures = 0) {
   const panel = document.querySelector("#panel-url");
   panel.textContent = job.result.panel.panelUrl || "未返回，请在服务器执行 x-ui 查看";
   panel.href = job.result.panel.panelUrl || "#";
+  document.querySelector("#panel-security-note").textContent = job.result.panel.tls === "self-signed"
+    ? "面板已强制 HTTPS（自签名证书）。首次打开会有浏览器证书警告；核对目标 IP 和证书后再继续。若需无警告访问，请为目标服务器配置受信任证书。"
+    : panel.href.startsWith("https://")
+      ? "面板使用 HTTPS。节点是否能从本机连通仍需单独测试。"
+      : "此实例原先使用 HTTP。输入面板密码前，请先在面板配置 HTTPS 或通过 SSH 隧道访问。";
   fill("#panel-user", job.result.panel.username);
   fill("#panel-password", job.result.panel.password);
   fill("#inbounds", job.result.inbounds);
@@ -161,6 +168,37 @@ async function poll(id, failures = 0) {
 document.querySelector("#copy-node").addEventListener("click", async () => {
   await navigator.clipboard.writeText(document.querySelector("#node-link").textContent);
   clientFeedback.textContent = "节点链接已复制。";
+});
+
+document.querySelector("#open-probe").addEventListener("click", () => {
+  document.querySelector("#probe-link").value = document.querySelector("#node-link").textContent || "";
+  document.querySelector("#probe-feedback").textContent = "";
+  probeDialog.showModal();
+});
+document.querySelector("#close-probe").addEventListener("click", () => probeDialog.close());
+document.querySelector("#probe-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const run = document.querySelector("#run-probe");
+  const feedback = document.querySelector("#probe-feedback");
+  run.disabled = true;
+  feedback.textContent = "正在从本机建立连接并请求测试页面…";
+  try {
+    const response = await fetch("api/probe", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        link: document.querySelector("#probe-link").value.trim(),
+        networkInterface: document.querySelector("#probe-interface").value.trim()
+      })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "本机测试失败。");
+    feedback.textContent = `端到端请求通过 · HTTP ${data.httpStatus} · 出口 ${data.egressIp || "未返回"} · ${data.networkInterface} · ${data.durationMs} ms`;
+  } catch (error) {
+    feedback.textContent = error.message;
+  } finally {
+    run.disabled = false;
+  }
 });
 
 function buildClashConfig(link) {

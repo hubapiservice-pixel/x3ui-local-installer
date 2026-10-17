@@ -2,7 +2,7 @@
 set -euo pipefail
 
 readonly ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-readonly VERSION="1.1.4"
+readonly VERSION="1.2.1"
 readonly APP_NAME="X3-UI Offline Installer.app"
 readonly DIST_DIR="$ROOT/dist"
 readonly ZIP_PATH="$DIST_DIR/X3-UI-Offline-Installer-macOS-arm64-v${VERSION}.zip"
@@ -11,6 +11,7 @@ readonly NODE_BIN="$(command -v node)"
 [[ "$(uname -m)" == "arm64" ]] || { echo "This build supports Apple Silicon only." >&2; exit 1; }
 [[ ! -e "$ZIP_PATH" ]] || { echo "Output already exists: $ZIP_PATH" >&2; exit 1; }
 node "$ROOT/scripts/fetch-offline-assets.mjs" --verify-only
+printf '%s  %s\n' '5d9dd24c0aba4b6cfcc6a33a5d67f854816ee17f392bf932ec8176da46f7e404' "$ROOT/offline-assets/tools/xray-macos-arm64" | shasum -a 256 -c -
 
 mkdir -p "$DIST_DIR"
 STAGING_DIR="$(mktemp -d "$DIST_DIR/.offline-build.XXXXXXXX")"
@@ -27,6 +28,7 @@ chmod 755 "$APP_DIR/Contents/MacOS/launch" "$RESOURCE_DIR/runtime/node"
 cp "$ROOT/server.mjs" "$RESOURCE_DIR/app/server.mjs"
 cp "$ROOT/security.mjs" "$RESOURCE_DIR/app/security.mjs"
 cp "$ROOT/remove.mjs" "$RESOURCE_DIR/app/remove.mjs"
+cp "$ROOT/probe.mjs" "$RESOURCE_DIR/app/probe.mjs"
 cp "$ROOT/package.json" "$RESOURCE_DIR/app/package.json"
 ditto "$ROOT/node_modules" "$RESOURCE_DIR/app/node_modules"
 ditto "$ROOT/public" "$RESOURCE_DIR/app/public"

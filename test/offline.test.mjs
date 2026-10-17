@@ -24,6 +24,23 @@ test("offline bootstrap reads uploaded files without a network fallback", async 
   assert.doesNotMatch(source, /\bcurl\b|X3UI_BASE_URL|DEFAULT_BASE_URL/);
 });
 
+test("both current bootstraps configure TLS before starting the panel", async () => {
+  for (const edition of ["offline-v3.9.0-xray-26.3.27", "v3.9.0-xray-26.3.27"]) {
+    const source = await readFile(path.join(root, "release", edition, "bootstrap.sh"), "utf8");
+    assert.match(source, /openssl req -x509[\s\S]*subjectAltName/);
+    assert.match(source, /x-ui" cert -webCert \/etc\/x-ui\/panel\.crt -webCertKey \/etc\/x-ui\/panel\.key/);
+    assert.match(source, /PANEL_URL=https:\/\//);
+    assert.ok(source.indexOf("cert -webCert") < source.indexOf("systemctl enable --now x-ui"));
+  }
+});
+
+test("online installs upload the current HTTPS bootstrap instead of executing a stale mirror script", async () => {
+  const source = await readFile(path.join(root, "server.mjs"), "utf8");
+  assert.match(source, /remoteDir = await uploadOnlineBootstrap\(conn, job\)/);
+  assert.match(source, /fastPut\(ONLINE_BOOTSTRAP, remote/);
+  assert.doesNotMatch(source, /BOOTSTRAP_SHA256/);
+});
+
 test("offline edition serves only loopback Host and reports its mode", async (t) => {
   const port = await freePort();
   const child = spawn(process.execPath, ["server.mjs"], {
@@ -73,6 +90,11 @@ test("offline edition serves only loopback Host and reports its mode", async (t)
   });
   assert.equal(unconfirmed.status, 400);
   assert.match((await unconfirmed.json()).error, /需要确认目标服务器 IP/);
+
+  const probe = await fetch(`http://127.0.0.1:${port}/api/probe`, {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ link: "bad" })
+  });
+  assert.equal(probe.status, process.platform === "darwin" && process.arch === "arm64" ? 400 : 404);
 });
 
 test("online remove requires both passwords and an exact host confirmation", async (t) => {

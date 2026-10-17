@@ -1,4 +1,4 @@
-X3-UI Offline Installer 1.1.4 (macOS Apple Silicon)
+X3-UI Offline Installer 1.2.1 (macOS Apple Silicon)
 
 Double-click the app to open the installer at 127.0.0.1. The app includes its
 own Node.js runtime, pinned 3X-UI and Xray files for Linux x86_64/aarch64,

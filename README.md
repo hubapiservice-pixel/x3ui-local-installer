@@ -8,7 +8,7 @@ Password-protected web installer for a pinned, self-hosted 3X-UI v3.9.0 release 
 - The installer accepts a public IPv4 address, SSH port, root username, and one-time SSH password.
 - The backend listens on `172.17.0.1:4182`; OpenResty serves the page with an IP-address TLS certificate.
 - `x3ui-installer-web.service` keeps the backend running. `x3ui-ip-cert-renew.timer` checks the short-lived IP certificate twice daily and reloads OpenResty after renewal.
-- The new removal and SSH-hardening source changes are not considered live until the 193 host is updated and read back; keep this distinction when using the public URL.
+- Local source changes are not considered live until the 193 host is updated and read back; keep this distinction when using the public URL.
 - New installs use `http://193.134.210.145:18086/v3.9.0-xray-26.3.27`; the original `/v3.9.0` mirror remains unchanged for rollback. Bootstrap, panel archives, and the AMD64/ARM64 Xray binaries have pinned checksums.
 
 ## Installation behavior
@@ -21,7 +21,8 @@ Password-protected web installer for a pinned, self-hosted 3X-UI v3.9.0 release 
 - Windows, Android, and macOS client installers are served from this site's `/downloads/` path. Only Apple App Store links remain external. The Mac sing-box 1.13.11 to Xray 26.3.27 handshake was verified through an SSH tunnel; that does not establish compatibility for every app version or network.
 - The client guide uses numbered, step-by-step instruction images built around screenshots captured from the mirrored v2rayN 7.25.6 and Clash Verge Rev 2.5.8 macOS builds, the mirrored v2rayNG 2.2.6 and Clash Meta 2.11.35 Android builds in an isolated emulator, and an installed Shadowrocket 2.2.92 macOS build. Windows layout and iPhone app screens were not captured; the iOS flows are labeled as diagrams, not screenshots. Original unaltered captures and provenance are in `public/guides/raw/` and `public/guides/README.md`.
 - The `补建节点` action can recover the existing link or create a missing node only on instances marked as installed by this bootstrap. It will not reinstall the panel or add a duplicate inbound.
-- The new source offers optional administrator creation, sudo verification, and root SSH disablement. It does not configure panel HTTPS.
+- The new source offers optional administrator creation, sudo verification, and root SSH disablement. New installs configure a self-signed HTTPS panel certificate before starting the service. Existing installs are not changed automatically.
+- The installed 3X-UI panel handles additional inbounds and protocol selection in its native Inbounds > Add screen. The installer only creates one default VLESS + REALITY inbound.
 - The new `移除 X3-UI` action only accepts an instance with this installer's managed marker. It stops the panel, creates and verifies a root-only backup on the VPS, removes fixed panel paths, and checks the service is inactive. SSH users, sudoers, and root SSH settings are left unchanged. If removal fails after the service is stopped, it attempts to restore the original files and service state.
 
 ## Security
@@ -32,7 +33,7 @@ Password-protected web installer for a pinned, self-hosted 3X-UI v3.9.0 release 
 - The backend is reachable only through the Docker bridge and the HTTPS reverse proxy. The public API accepts public IPv4 destinations only.
 - Job results are held in memory for at most 30 minutes. The application allows at most two concurrent installations.
 - SSH host keys are not pinned by this release. Operators should verify target identity through their VPS provider before entering root credentials.
-- Newly installed target panels use HTTP on port 2053. Access them through an SSH tunnel or configure HTTPS before entering the panel password over the public Internet.
+- New target panels serve HTTPS only on port 2053. The generated certificate is self-signed, so browsers will show a trust warning; for authenticated public access, install a CA-trusted certificate for the target IP or domain. Older managed instances can still use HTTP until separately migrated.
 - Xray 26.3.27 is an older compatibility build and does not include newer security fixes. A reachable TCP port and active service do not prove that a particular client network can reach the VPS.
 
 ## Local development
@@ -46,16 +47,16 @@ The default bind address is `127.0.0.1:4178`. Production uses `X3UI_BIND_HOST` a
 
 ## Separate offline macOS edition
 
-The offline edition is a self-contained Apple Silicon app. It bundles Node.js, the pinned 3X-UI/Xray Linux x86_64 and aarch64 payloads, all 14 Windows/Android/macOS client installers, and the illustrated client guide. iOS clients remain App Store links because their store-distributed packages cannot be bundled. It does not replace or update the public installer.
+The offline edition is a self-contained Apple Silicon app. It bundles Node.js, the pinned 3X-UI/Xray Linux x86_64 and aarch64 payloads, an arm64 Xray probe binary, all 14 Windows/Android/macOS client installers, and the illustrated client guide. iOS clients remain App Store links because their store-distributed packages cannot be bundled. It does not replace or update the public installer.
 
 ```bash
 node scripts/fetch-offline-assets.mjs
 bash scripts/build-offline-macos-app.sh
 ```
 
-The fetch step copies assets from the self-hosted 193 mirror into `offline-assets/` and checks the pinned hashes in the release and client manifests. The build step verifies them again, then writes `dist/X3-UI-Offline-Installer-macOS-arm64-v1.1.4.zip` and its `.sha256` file. After extraction, double-click the app. It opens a loopback-only page and uses its embedded runtime; Node.js does not need to be installed on the receiving Mac. The ZIP is ad-hoc signed but not notarized, so macOS may require Control-click and Open on first launch.
+The fetch step copies assets from the self-hosted 193 mirror into `offline-assets/` and checks the pinned hashes in the release and client manifests. The build step also checks the bundled macOS probe binary, then writes `dist/X3-UI-Offline-Installer-macOS-arm64-v1.2.1.zip` and its `.sha256` file. After extraction, double-click the app. It opens a loopback-only page and uses its embedded runtime; Node.js does not need to be installed on the receiving Mac. The ZIP is ad-hoc signed but not notarized, so macOS may require Control-click and Open on first launch.
 
-Only the SSH connection to the target VPS is needed during installation. The app detects the target CPU, SFTP-uploads the matching files to a root-only temporary directory, checks them again with `sha256sum`, and runs the offline bootstrap without `curl` or an upstream fallback. The target must be a clean Linux x86_64/aarch64 system with root SSH, systemd, tar, sha256sum, and openssl. Existing 3X-UI files are not overwritten. A successful install removes only its temporary upload files; a failed upload or install leaves them for diagnosis. The result confirms the server-side panel and listener, not client-side reachability. The panel itself and the resulting proxy node still need whatever network connectivity their normal operation requires.
+Only the SSH connection to the target VPS is needed during installation. The app detects the target CPU, SFTP-uploads the matching files to a root-only temporary directory, checks them again with `sha256sum`, and runs the offline bootstrap without `curl` or an upstream fallback. The target must be a clean Linux x86_64/aarch64 system with root SSH, systemd, tar, sha256sum, and openssl. Existing 3X-UI files are not overwritten. A successful install removes only its temporary upload files; a failed upload or install leaves them for diagnosis. The result confirms the server-side panel and listener. The local probe performs a separate end-to-end HTTPS request through a VLESS + REALITY TCP node from the Mac, including Shadowrocket's encoded VLESS-encryption links; it can optionally bind to an `en` physical interface. Other protocols must be tested in a compatible client.
 
 Both editions offer optional SSH hardening after panel and node setup. Enter a new admin username and a 12+ character password; the form then allows checking `sudo -i` and, only after that, disabling root SSH. The app establishes a separate password-authenticated SSH connection and verifies `sudo -i` both before and after changing sshd. A three-minute systemd rollback timer is armed before the change. It verifies that a new root password login is rejected, then cancels the timer; on failure it attempts to restore and independently verify root access. The result records each check. To recover results after disabling root, enter the new username and password and use the recover action; sudo is verified again. Existing non-installer users are not silently modified. The removal action retains a root-only verified panel backup on the target; it does not revert SSH hardening.
 

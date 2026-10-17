@@ -106,10 +106,12 @@
               <div class="node-actions">
                 <button id="copy-node" type="button" title="复制节点链接">复制节点链接</button>
                 <button id="download-clash" class="secondary-button" type="button" title="在本机生成 Clash Meta 配置文件">下载 Clash 配置</button>
+                <button id="open-probe" class="secondary-button hidden" type="button">本机测试节点</button>
               </div>
               <p id="client-feedback" class="feedback" role="status" aria-live="polite"></p>
             </div>
-            <p class="security-warning">面板当前使用 HTTP，输入密码前请配置 HTTPS 或经 SSH 隧道访问。节点已在服务端创建并监听；客户端经公网能否连接需另行验证。</p>
+            <p class="panel-howto">新建其他协议节点：打开上方控制面板，登录后进入「入站列表」→「添加」，选择协议并保存；在面板中复制新节点链接，再用客户端或本地测试核验。</p>
+            <p id="panel-security-note" class="security-warning"></p>
           </section>
           <section id="remove-result" class="hidden" aria-label="移除结果" aria-live="polite">
             <h3>移除回执</h3>
@@ -237,6 +239,16 @@
         <p class="notice">节点导入成功不代表线路可达。若仅这一条超时，请先停止其他全局代理再测，或对比同一设备的物理网络与中转路径。</p>
       </div>
     </dialog>
+    <dialog id="probe-dialog" aria-labelledby="probe-dialog-title">
+      <div class="dialog-header"><h2 id="probe-dialog-title">本机测试节点</h2><button id="close-probe" class="secondary-button" type="button">关闭</button></div>
+      <form id="probe-form" class="dialog-content">
+        <p class="notice">从这台 Mac 发起完整的 VLESS + REALITY TCP 代理请求，支持常见链接及 Shadowrocket 编码链接。其他协议请先在 3X-UI 面板创建，再用对应客户端测试。结果不等同于 Shadowrocket 的界面状态。</p>
+        <label>节点链接<textarea id="probe-link" rows="4" required spellcheck="false" autocomplete="off" placeholder="vless://..."></textarea></label>
+        <label>物理网卡（可选）<input id="probe-interface" placeholder="例如 en0；留空使用系统路由" autocomplete="off"></label>
+        <div class="dialog-actions"><button id="run-probe" type="submit">开始测试</button></div>
+        <p id="probe-feedback" class="probe-feedback" role="status" aria-live="polite"></p>
+      </form>
+    </dialog>
     <dialog id="remove-dialog" aria-labelledby="remove-dialog-title">
       <div class="dialog-header"><h2 id="remove-dialog-title">确认移除 3X-UI</h2></div>
       <div class="dialog-content">
@@ -247,6 +259,6 @@
         </div>
       </div>
     </dialog>
-    <script src="app.js?v=20261018-remove-1"></script>
+    <script src="app.js?v=20261018-https-probe-1"></script>
   </body>
 </html>

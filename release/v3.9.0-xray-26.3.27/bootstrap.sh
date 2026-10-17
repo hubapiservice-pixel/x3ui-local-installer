@@ -102,11 +102,24 @@ panel_path="$(openssl rand -hex 12)"
 [[ ${#panel_password} -ge 20 ]] || fail "无法生成安全的面板密码。"
 
 "$INSTALL_DIR/x-ui" setting -username "$panel_user" -password "$panel_password" -port "$PANEL_PORT" -webBasePath "$panel_path" >/dev/null
+panel_host="${PUBLIC_HOST:-127.0.0.1}"
+if [[ "$panel_host" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  cert_san="IP:${panel_host}"
+else
+  cert_san="DNS:${panel_host}"
+fi
+umask 077
+openssl req -x509 -newkey rsa:3072 -sha256 -nodes -days 365 \
+  -keyout /etc/x-ui/panel.key -out /etc/x-ui/panel.crt \
+  -subj "/CN=${panel_host}" -addext "subjectAltName=${cert_san}" >/dev/null 2>&1
+chmod 600 /etc/x-ui/panel.key
+"$INSTALL_DIR/x-ui" cert -webCert /etc/x-ui/panel.crt -webCertKey /etc/x-ui/panel.key >/dev/null
+cert_state="$("$INSTALL_DIR/x-ui" setting -getCert)"
+[[ "$cert_state" == *"cert: /etc/x-ui/panel.crt"* && "$cert_state" == *"key: /etc/x-ui/panel.key"* ]] || fail "面板 HTTPS 证书未写入配置，拒绝启动 HTTP 面板。"
 
 [[ -f "$INSTALL_DIR/x-ui.service.debian" ]] || fail "发行包结构无效：缺少 Debian 服务单元。"
 sed "s|/usr/local/x-ui|${INSTALL_DIR}|g" "$INSTALL_DIR/x-ui.service.debian" >/etc/systemd/system/x-ui.service
 
-panel_host="${PUBLIC_HOST:-<server-ip>}"
 cat >"$MANAGED_FILE" <<EOF
 X3UI_BOOTSTRAP_MANAGED=1
 X3UI_RELEASE_VERSION=${RELEASE_VERSION}
@@ -114,7 +127,8 @@ X3UI_CORE_VERSION=${CORE_VERSION}
 X3UI_INSTALL_DIR=${INSTALL_DIR}
 EOF
 cat >/etc/x-ui/install-result.env <<EOF
-PANEL_URL=http://${panel_host}:${PANEL_PORT}/${panel_path}
+PANEL_URL=https://${panel_host}:${PANEL_PORT}/${panel_path}
+PANEL_TLS=self-signed
 PANEL_PORT=${PANEL_PORT}
 PANEL_PATH=${panel_path}
 PANEL_USERNAME=${panel_user}

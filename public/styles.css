@@ -7,7 +7,7 @@
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; overflow: hidden; }
 body { margin: 0; min-width: 320px; }
-button, input { font: inherit; }
+button, input, textarea { font: inherit; }
 button { min-height: 40px; border: 1px solid #176748; border-radius: 6px; padding: 0 15px; background: #176748; color: #fff; font-weight: 700; cursor: pointer; }
 button:hover { background: #115139; }
 button:focus-visible, a:focus-visible, summary:focus-visible { outline: 3px solid #76b99c; outline-offset: 2px; }
@@ -42,6 +42,8 @@ input::placeholder { color: #9aa8ab; }
 input:focus { outline: 3px solid #b7deca; border-color: #176748; }
 input[type="checkbox"] { width: 17px; height: 17px; padding: 0; margin: 0; accent-color: #176748; }
 input:disabled { background: #f1f4f4; color: #7b8b8e; }
+textarea { width: 100%; min-width: 0; resize: vertical; border: 1px solid #bac8c8; border-radius: 5px; padding: 10px; color: #1b292d; background: #fff; }
+textarea:focus { outline: 3px solid #b7deca; border-color: #176748; }
 .admin-security { margin-top: 12px; padding-top: 8px; border-top: 1px solid #dce4e4; }
 .admin-security > summary { cursor: pointer; color: #304b50; font-size: 13px; font-weight: 700; }
 .admin-security > summary span { margin-left: 5px; color: #728185; font-size: 12px; font-weight: 500; }
@@ -86,6 +88,11 @@ input:disabled { background: #f1f4f4; color: #7b8b8e; }
 .feedback { margin: 7px 0 0; color: #176748; font-size: 12px; }
 .feedback:empty { display: none; }
 .security-warning { margin: 20px 0 0; padding: 10px 12px; border-left: 3px solid #b8753d; background: #fbf6ef; color: #765337; font-size: 12px; line-height: 1.5; }
+.panel-howto { margin: 14px 0 0; color: #445a60; font-size: 12px; line-height: 1.55; }
+.probe-feedback { margin: 14px 0 0; min-height: 20px; color: #176748; font-size: 13px; overflow-wrap: anywhere; }
+#probe-dialog { width: min(650px, calc(100vw - 28px)); }
+#probe-form { display: grid; gap: 14px; }
+#probe-form .notice { margin: 0; }
 dialog { width: min(900px, calc(100vw - 28px)); max-height: calc(100dvh - 28px); margin: auto; padding: 0; border: 1px solid #cbd7d8; border-radius: 8px; box-shadow: 0 24px 70px #1b292d33; color: #1b292d; }
 dialog[open] { display: flex; flex-direction: column; }
 dialog::backdrop { background: #14232688; }

@@ -21,7 +21,10 @@ const APP_INSTANCE = process.env.X3UI_APP_INSTANCE || "";
 const OFFLINE_RELEASE_DIR = path.join(__dirname, "offline-assets", "release");
 const OFFLINE_BOOTSTRAP = path.join(__dirname, "release", "offline-v3.9.0-xray-26.3.27", "bootstrap.sh");
 const ONLINE_BOOTSTRAP = path.join(__dirname, "release", "v3.9.0-xray-26.3.27", "bootstrap.sh");
-const PROBE_XRAY_BIN = path.join(__dirname, "offline-assets", "tools", "xray-macos-arm64");
+const PROBE_PLATFORM = process.platform === "darwin" && process.arch === "arm64" ? "macos-arm64" :
+  process.platform === "win32" && process.arch === "x64" ? "windows-x64" : null;
+const PROBE_XRAY_BIN = path.join(__dirname, "offline-assets", "tools",
+  PROBE_PLATFORM === "windows-x64" ? "xray-windows-x64.exe" : "xray-macos-arm64");
 const OFFLINE_FILES = {
   x86_64: [
     ["x-ui-linux-amd64.tar.gz", "d7cbe0bf6358ee0d2117c24fd2efb483502e411d38e2ea59bd0bf5e7a3e39390"],
@@ -614,14 +617,14 @@ app.post("/api/install", requireAccess, (req, res) => queueJob(req, res, install
 app.post("/api/recover", requireAccess, (req, res) => queueJob(req, res, recover, "recover"));
 app.post("/api/remove", requireAccess, (req, res) => queueJob(req, res, remove, "remove"));
 app.post("/api/probe", async (req, res) => {
-  if (!OFFLINE_MODE || process.platform !== "darwin" || process.arch !== "arm64") {
-    return res.status(404).json({ error: "本机节点测试仅在 Apple 芯片本地版中提供。" });
+  if (!OFFLINE_MODE || !PROBE_PLATFORM) {
+    return res.status(404).json({ error: "本机节点测试仅在 Apple 芯片或 Windows x64 本地版中提供。" });
   }
   if (probeRunning) return res.status(429).json({ error: "已有节点测试正在运行。" });
   try {
     parseProbeInput(req.body?.link, req.body?.networkInterface);
     const info = await stat(PROBE_XRAY_BIN);
-    if (!info.isFile() || await fileSha256(PROBE_XRAY_BIN) !== PROBE_XRAY_SHA256) {
+    if (!info.isFile() || await fileSha256(PROBE_XRAY_BIN) !== PROBE_XRAY_SHA256[PROBE_PLATFORM]) {
       throw new Error("本机 Xray 测试内核缺失或校验失败。请使用完整的离线安装包。");
     }
   } catch (error) {
@@ -639,6 +642,7 @@ app.post("/api/probe", async (req, res) => {
 });
 app.get("/api/edition", (_req, res) => res.json({
   edition: OFFLINE_MODE ? "offline" : "online",
+  ...(OFFLINE_MODE ? { platform: PROBE_PLATFORM } : {}),
   ...(APP_INSTANCE ? { instance: APP_INSTANCE } : {})
 }));
 

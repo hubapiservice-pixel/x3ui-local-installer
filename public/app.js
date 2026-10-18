@@ -28,7 +28,12 @@ const lastJobKey = "x3ui-last-job";
 fetch("api/edition", { cache: "no-store" }).then((response) => response.json()).then((data) => {
   if (data.edition !== "offline") return;
   isOffline = true;
-  document.querySelector("#open-probe").classList.remove("hidden");
+  if (data.platform) document.querySelector("#open-probe").classList.remove("hidden");
+  if (data.platform === "windows-x64") {
+    const probeInterface = document.querySelector("#probe-interface");
+    probeInterface.value = "";
+    probeInterface.closest("label").classList.add("hidden");
+  }
   document.title = "X3-UI 本地安装器";
   document.querySelector("#edition-badge").textContent = "本地版";
   document.querySelector("#online-auth").classList.add("hidden");

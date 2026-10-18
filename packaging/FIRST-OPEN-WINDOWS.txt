@@ -1,0 +1,10 @@
+X3-UI 离线安装器 - Windows x64
+
+1. 将 ZIP 完整解压到本地目录，不要直接在压缩包预览中运行。
+2. 双击 Start-X3UI.cmd。程序仅在 127.0.0.1 本机启动，自动打开浏览器。
+3. 在页面填写目标 Linux VPS 的 SSH 地址和凭证，再选择安装、安全设置或移除。
+4. 安装所需的 3X-UI 固定版本、客户端和测试内核已包含在此包内；目标 VPS 不需要下载官方发行包。
+
+此包面向 Windows 10/11 x64。无需单独安装 Node.js，但解压后必须保留 runtime、app 与 launcher.mjs 的目录结构。
+此包未以发行者代码签名，Windows 可能显示 SmartScreen/Defender 提示；请先核对下载地址和 SHA-256。不要关闭系统安全防护。
+运行日志：%LOCALAPPDATA%\X3UIOfflineInstaller\server.log

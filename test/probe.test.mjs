@@ -5,7 +5,7 @@ import { parseProbeInput } from "../probe.mjs";
 const link = "vless://01234567-89ab-4cde-8f01-23456789abcd@8.8.8.8:443?encryption=none&type=tcp&security=reality&sni=www.example.com&fp=chrome&pbk=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA&sid=1234abcd&flow=xtls-rprx-vision";
 
 test("probe accepts a well-formed public VLESS Reality TCP link", () => {
-  const result = parseProbeInput(link, "en0");
+  const result = parseProbeInput(link, "en0", "darwin");
   assert.equal(result.port, 443);
   assert.equal(result.iface, "en0");
 });
@@ -27,5 +27,7 @@ test("probe rejects local destinations, other protocols, and invalid interfaces"
   assert.throws(() => parseProbeInput(link.replace("8.8.8.8", "127.0.0.1")), /公网 IPv4/);
   assert.throws(() => parseProbeInput(link.replace("8.8.8.8", "192.168.1.4")), /公网 IPv4/);
   assert.throws(() => parseProbeInput(link.replace("type=tcp", "type=ws")), /VLESS/);
-  assert.throws(() => parseProbeInput(link, "lo0"), /物理网卡/);
+  assert.throws(() => parseProbeInput(link, "lo0", "darwin"), /物理网卡/);
+  assert.equal(parseProbeInput(link, "", "win32").iface, "");
+  assert.throws(() => parseProbeInput(link, "en0", "win32"), /Windows/);
 });

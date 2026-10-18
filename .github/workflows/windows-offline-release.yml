@@ -1,0 +1,43 @@
+name: Windows x64 offline release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.15.0
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+      - name: Unit tests
+        run: npm test
+      - name: Build pinned offline package
+        shell: pwsh
+        run: ./scripts/build-offline-windows.ps1
+      - name: Smoke test extracted Windows package
+        shell: pwsh
+        run: ./scripts/smoke-offline-windows.ps1
+      - name: Archive release source
+        shell: pwsh
+        run: git archive --format=zip --prefix=x3ui-local-installer-v1.3.0/ --output=dist/X3-UI-Installer-Source-v1.3.0.zip HEAD
+      - name: Publish verified release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v1.3.0 `
+            dist/X3-UI-Offline-Installer-Windows-x64-v1.3.0.zip `
+            dist/X3-UI-Offline-Installer-Windows-x64-v1.3.0.zip.sha256 `
+            dist/X3-UI-Installer-Source-v1.3.0.zip `
+            --repo $env:GITHUB_REPOSITORY `
+            --target $env:GITHUB_SHA `
+            --title "X3-UI Offline Installer v1.3.0 - Windows x64" `
+            --notes-file packaging/RELEASE-NOTES-WINDOWS.md

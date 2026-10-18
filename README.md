@@ -45,6 +45,23 @@ npm start
 
 The default bind address is `127.0.0.1:4178`. Production uses `X3UI_BIND_HOST` and `PORT` from its service configuration.
 
+## Separate offline Windows x64 edition
+
+The Windows x64 ZIP bundles Node.js 24.15.0, Xray 26.3.27 for local node testing, the pinned 3X-UI/Linux Xray payloads, all 14 desktop/mobile client installers, and the illustrated guide. It runs locally and SFTP-uploads the Linux payloads to the target VPS; the target does not fetch upstream packages. iOS clients remain App Store links.
+
+After downloading `X3-UI-Offline-Installer-Windows-x64-v1.3.0.zip`, verify its adjacent `.sha256` file, extract the whole ZIP, and double-click `Start-X3UI.cmd`. It opens the installer on `127.0.0.1` without installing Node.js system-wide or requiring administrator rights on Windows. Node testing on Windows follows the system route; the macOS `en0` interface selector is hidden. A first run may still show Windows security prompts because this package has no publisher code-signing certificate. Do not disable Defender or SmartScreen globally.
+
+The reproducible build runs on Windows x64 with Node.js 24.15.0 and PowerShell 7:
+
+```powershell
+npm ci
+npm test
+npm run build:offline:win
+npm run smoke:offline:win
+```
+
+The build downloads only fixed-version assets, verifies SHA-256 before packaging, and writes the ZIP and checksum under `dist/`. The smoke test extracts that ZIP, runs the bundled executables and launcher, checks the loopback-only API and local client download, then stops its test process. GitHub Actions runs these checks before publishing the Windows release. This is a Windows runner check, not a claim that every consumer PC or network path has been tested.
+
 ## Separate offline macOS edition
 
 The offline edition is a self-contained Apple Silicon app. It bundles Node.js, the pinned 3X-UI/Xray Linux x86_64 and aarch64 payloads, an arm64 Xray probe binary, all 14 Windows/Android/macOS client installers, and the illustrated client guide. iOS clients remain App Store links because their store-distributed packages cannot be bundled. It does not replace or update the public installer.

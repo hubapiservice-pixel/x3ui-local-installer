@@ -1,13 +1,15 @@
 {
   "name": "x3ui-local-installer",
-  "version": "0.1.0",
+  "version": "1.3.0",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test",
     "verify:offline": "node scripts/fetch-offline-assets.mjs --verify-only",
-    "build:offline:mac": "bash scripts/build-offline-macos-app.sh"
+    "build:offline:mac": "bash scripts/build-offline-macos-app.sh",
+    "build:offline:win": "pwsh -NoProfile -File scripts/build-offline-windows.ps1",
+    "smoke:offline:win": "pwsh -NoProfile -File scripts/smoke-offline-windows.ps1"
   },
   "dependencies": {
     "express": "^5.1.0",

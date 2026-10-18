@@ -61,7 +61,9 @@ test("offline edition serves only loopback Host and reports its mode", async (t)
   }
   assert.ok(response, "offline server did not start");
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { edition: "offline" });
+  const platform = process.platform === "darwin" && process.arch === "arm64" ? "macos-arm64" :
+    process.platform === "win32" && process.arch === "x64" ? "windows-x64" : null;
+  assert.deepEqual(await response.json(), { edition: "offline", platform });
 
   const rejected = await new Promise((resolve, reject) => {
     http.get({ hostname: "127.0.0.1", port, path: "/api/edition", headers: { Host: "external.example" } }, (res) => {
@@ -94,7 +96,7 @@ test("offline edition serves only loopback Host and reports its mode", async (t)
   const probe = await fetch(`http://127.0.0.1:${port}/api/probe`, {
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ link: "bad" })
   });
-  assert.equal(probe.status, process.platform === "darwin" && process.arch === "arm64" ? 400 : 404);
+  assert.equal(probe.status, platform ? 400 : 404);
 });
 
 test("online remove requires both passwords and an exact host confirmation", async (t) => {

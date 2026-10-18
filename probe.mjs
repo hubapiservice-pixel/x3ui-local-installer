@@ -4,7 +4,10 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 
-export const PROBE_XRAY_SHA256 = "5d9dd24c0aba4b6cfcc6a33a5d67f854816ee17f392bf932ec8176da46f7e404";
+export const PROBE_XRAY_SHA256 = {
+  "macos-arm64": "5d9dd24c0aba4b6cfcc6a33a5d67f854816ee17f392bf932ec8176da46f7e404",
+  "windows-x64": "15c2d007954ac53ba69b80ec91242786b3c0b71d52649165b4ca1d5cc96ef8f1"
+};
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const VLESS_ENCRYPTION = /^mlkem768x25519plus\.(native|xorpub|random)\.(0rtt|1rtt)\.[A-Za-z0-9_-]{32,128}$/;
 
@@ -33,7 +36,7 @@ function vlessCredentials(url) {
   return { id, encryption };
 }
 
-export function parseProbeInput(link, networkInterface = "") {
+export function parseProbeInput(link, networkInterface = "", platform = process.platform) {
   if (typeof link !== "string" || link.length > 4096) throw new Error("节点链接格式不正确。");
   let url;
   let embeddedEncryption;
@@ -63,6 +66,7 @@ export function parseProbeInput(link, networkInterface = "") {
     throw new Error("本机端到端测试目前支持公网 IPv4 的 VLESS + REALITY TCP 链接。");
   }
   const iface = String(networkInterface || "").trim();
+  if (iface && platform === "win32") throw new Error("Windows 本机测试请留空物理网卡，使用系统路由。");
   if (iface && !/^en\d{1,2}$/.test(iface)) throw new Error("网卡名称须为 en0、en1 等物理网卡；留空则跟随系统路由。");
   return { url, port, iface, credentials, sni, fingerprint };
 }
@@ -100,7 +104,7 @@ function runCurl(port) {
     const args = ["--silent", "--show-error", "--fail", "--noproxy", "", "--connect-timeout", "7", "--max-time", "18",
       "--retry", "2", "--retry-connrefused", "--proxy", `socks5h://127.0.0.1:${port}`,
       "--write-out", "\n__HTTP_STATUS__=%{http_code}", "https://www.cloudflare.com/cdn-cgi/trace"];
-    const child = spawn("curl", args, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ALL_PROXY: "", HTTPS_PROXY: "", HTTP_PROXY: "" } });
+    const child = spawn(process.platform === "win32" ? "curl.exe" : "curl", args, { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, ALL_PROXY: "", HTTPS_PROXY: "", HTTP_PROXY: "" } });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (data) => { stdout = (stdout + data).slice(-8192); });

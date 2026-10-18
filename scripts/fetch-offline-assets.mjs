@@ -11,7 +11,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const output = path.join(root, "offline-assets");
 const verifyOnly = process.argv.includes("--verify-only");
 const releaseBase = "http://193.134.210.145:18086/v3.9.0-xray-26.3.27";
-const clientBase = "https://193.134.210.145/downloads";
+const clientBase = "https://github.com/hubapiservice-pixel/x3ui-local-installer/releases/download/v1.2.1";
 
 const manifestText = await readFile(path.join(root, "release/v3.9.0-xray-26.3.27/manifest.env"), "utf8");
 const manifest = Object.fromEntries(manifestText.split(/\r?\n/)
@@ -70,15 +70,22 @@ for (const asset of assets) {
   if (verifyOnly) throw new Error(`Missing asset: ${target}`);
 
   const temporary = `${target}.part-${process.pid}`;
-  console.log(`downloading ${asset.group}/${asset.name}`);
-  try {
-    const response = await fetch(asset.source, { signal: AbortSignal.timeout(30 * 60 * 1000) });
-    if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}: ${asset.name}`);
-    await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary, { flags: "wx" }));
-    if (!await verified(temporary, asset)) throw new Error(`Checksum mismatch: ${asset.name}`);
-    await rename(temporary, target);
-    console.log(`ready ${asset.group}/${asset.name}`);
-  } finally {
-    await rm(temporary, { force: true });
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    console.log(`downloading ${asset.group}/${asset.name} (attempt ${attempt}/3)`);
+    try {
+      const response = await fetch(asset.source, { signal: AbortSignal.timeout(30 * 60 * 1000) });
+      if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}: ${asset.name}`);
+      await pipeline(Readable.fromWeb(response.body), createWriteStream(temporary, { flags: "wx" }));
+      if (!await verified(temporary, asset)) throw new Error(`Checksum mismatch: ${asset.name}`);
+      await rename(temporary, target);
+      console.log(`ready ${asset.group}/${asset.name}`);
+      break;
+    } catch (error) {
+      if (attempt === 3 || /Checksum mismatch|HTTP 4\d\d/.test(error.message)) throw error;
+      console.warn(`${asset.name}: ${error.message}; retrying`);
+      await new Promise((resolve) => setTimeout(resolve, attempt * 2000));
+    } finally {
+      await rm(temporary, { force: true });
+    }
   }
 }

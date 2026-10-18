@@ -2,7 +2,7 @@
 set -euo pipefail
 
 readonly ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-readonly VERSION="1.2.1"
+readonly VERSION="1.4.0"
 readonly APP_NAME="X3-UI Offline Installer.app"
 readonly DIST_DIR="$ROOT/dist"
 readonly ZIP_PATH="$DIST_DIR/X3-UI-Offline-Installer-macOS-arm64-v${VERSION}.zip"
@@ -26,6 +26,7 @@ cp "$NODE_BIN" "$RESOURCE_DIR/runtime/node"
 chmod 755 "$APP_DIR/Contents/MacOS/launch" "$RESOURCE_DIR/runtime/node"
 
 cp "$ROOT/server.mjs" "$RESOURCE_DIR/app/server.mjs"
+cp "$ROOT/container.mjs" "$RESOURCE_DIR/app/container.mjs"
 cp "$ROOT/security.mjs" "$RESOURCE_DIR/app/security.mjs"
 cp "$ROOT/remove.mjs" "$RESOURCE_DIR/app/remove.mjs"
 cp "$ROOT/probe.mjs" "$RESOURCE_DIR/app/probe.mjs"

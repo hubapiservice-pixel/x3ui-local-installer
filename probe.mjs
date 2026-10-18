@@ -123,7 +123,10 @@ export async function probeVlessReality(link, networkInterface, binary) {
   try {
     const configPath = path.join(dir, "config.json");
     await writeFile(configPath, JSON.stringify(configFor(parsed, port)), { mode: 0o600 });
-    xray = spawn(binary, ["run", "-c", configPath], { stdio: ["ignore", "ignore", "ignore"] });
+    xray = spawn(binary, ["run", "-c", configPath], { stdio: ["ignore", "pipe", "pipe"] });
+    let xrayErrors = "";
+    xray.stdout.on("data", (data) => { xrayErrors = (xrayErrors + data).slice(-8192); });
+    xray.stderr.on("data", (data) => { xrayErrors = (xrayErrors + data).slice(-8192); });
     let spawnError;
     xray.once("error", (error) => { spawnError = error; });
     await new Promise((resolve) => setTimeout(resolve, 900));
@@ -131,9 +134,12 @@ export async function probeVlessReality(link, networkInterface, binary) {
     const result = await runCurl(port);
     const status = Number(result.stdout.match(/__HTTP_STATUS__=(\d{3})/)?.[1] || 0);
     if (result.code !== 0 || status !== 200) {
-      const cause = /timed out/i.test(result.stderr) ? "连接超时" :
+      const cause = /REALITY.*(invalid|failed)|invalid.*REALITY/i.test(xrayErrors) ? "REALITY 握手失败" :
+        /connection.*(refused|reset)|EOF/i.test(xrayErrors) ? "节点连接被拒绝或重置" :
+        /timed out/i.test(result.stderr) ? "连接超时" :
         /certificate/i.test(result.stderr) ? "目标站点证书校验失败" :
-        /failed to connect|connection refused/i.test(result.stderr) ? "连接被拒绝" : "代理请求失败";
+        /failed to connect|connection refused/i.test(result.stderr) ? "连接被拒绝" :
+        `代理请求失败（curl ${result.code}，HTTP ${status}）`;
       throw new Error(`本机端到端测试未通过：${cause}。请核对防火墙、节点参数和客户端网络。`);
     }
     return {

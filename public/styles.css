@@ -32,6 +32,15 @@ h1 { margin-bottom: 2px; font-size: 22px; line-height: 1.2; letter-spacing: 0; }
 .section-heading h2 { margin: 0; font-size: 18px; line-height: 1.3; }
 .section-heading span { color: #68777c; font-size: 12px; font-weight: 700; }
 .offline-note { margin: -8px 0 12px; color: #4c6760; font-size: 12px; line-height: 1.5; }
+.install-mode { display: grid; grid-template-columns: 1fr 1fr; gap: 0; margin: 0 0 11px; padding: 3px; border: 1px solid #c6d3d2; border-radius: 6px; background: #eaf0ef; }
+.install-mode label { display: block; cursor: pointer; }
+.install-mode input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.install-mode span { display: grid; place-items: center; min-height: 34px; border-radius: 4px; color: #50676b; font-size: 12px; font-weight: 700; }
+.install-mode input:checked + span { background: #fff; color: #176748; box-shadow: 0 1px 4px #203b3b22; }
+.install-mode input:focus-visible + span { outline: 3px solid #76b99c; outline-offset: 1px; }
+.container-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 11px; padding-bottom: 11px; border-bottom: 1px solid #dce4e4; }
+.container-fields .full-field { grid-column: 1 / -1; }
+.container-fields p { margin: 0; color: #63767b; font-size: 11px; line-height: 1.45; }
 .auth-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 11px; }
 .auth-fields label { font-size: 12px; }
 .field-grid { display: grid; grid-template-columns: minmax(0, .7fr) minmax(0, 1.3fr); gap: 11px 12px; }

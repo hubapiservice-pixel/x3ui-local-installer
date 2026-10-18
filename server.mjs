@@ -9,6 +9,7 @@ import { Client } from "ssh2";
 import { applySecurity, securityInput } from "./security.mjs";
 import { REMOVE_SCRIPT, parseRemoveResult } from "./remove.mjs";
 import { parseProbeInput, probeVlessReality, PROBE_XRAY_SHA256 } from "./probe.mjs";
+import { containerInput, containerNodeLink, containerPortUrl } from "./container.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -214,6 +215,9 @@ function runSsh(input, onReady) {
 }
 
 function execRemote(conn, command, onData = () => {}, stdin = null) {
+  if (conn.containerName) {
+    return execRemote(conn.hostConnection, `lxc exec ${shellQuote(conn.containerName)} -- bash -lc ${shellQuote(command)}`, onData, stdin);
+  }
   const sudoPassword = sudoConnections.get(conn);
   if (sudoPassword) {
     command = `sudo -k -S -p '' -i sh -c ${shellQuote(command)}`;
@@ -235,7 +239,7 @@ function execRemote(conn, command, onData = () => {}, stdin = null) {
         onData(text);
       });
       stream.on("close", (code) => resolve({ code, stdout, stderr }));
-      if (stdin !== null) stream.end(stdin);
+      stream.end(stdin ?? "");
     });
   });
 }
@@ -266,7 +270,7 @@ function parseInstallResult(output, host) {
 }
 
 async function panelRequest(conn, panel, route, { method = "GET", body, cookie, csrf } = {}) {
-  const address = new URL(panel.panelUrl);
+  const address = new URL(panel.internalUrl || panel.panelUrl);
   const url = `${address.origin}${address.pathname.replace(/\/+$/, "")}${route}`;
   const args = ["curl", "--silent", "--show-error", "--noproxy", "*", "--max-time", "15", "--dump-header", "-", "--write-out", "\\n__HTTP_STATUS__=%{http_code}", "--request", method];
   args.push("--resolve", `${address.hostname}:${address.port || (address.protocol === "https:" ? 443 : 80)}:127.0.0.1`);
@@ -316,7 +320,7 @@ function nodeFromInbound(inbound, host) {
   return { port: inbound.port, link: `vless://${client.id}@${host}:${inbound.port}?${query}#${encodeURIComponent(inbound.remark)}` };
 }
 
-async function createRealityNode(conn, panel, host) {
+async function createRealityNode(conn, panel, host, { publicPort, requiredPort } = {}) {
   let initialCsrf;
   for (let attempt = 0; attempt < 10; attempt += 1) {
     try {
@@ -348,14 +352,18 @@ async function createRealityNode(conn, panel, host) {
   if (previous) {
     const readback = await panelRequest(conn, panel, `/panel/api/inbounds/get/${previous.id}`, session);
     const node = nodeFromInbound(readback.data.obj, host);
+    if (requiredPort && node.port !== requiredPort) throw new Error("现有节点端口与容器映射不一致。");
     const listening = await execRemote(conn, `ss -ltnH 'sport = :${node.port}'`);
     if (!listening.stdout.trim()) throw new Error("已有节点未监听，请检查 Xray 状态。");
-    return node;
+    return publicPort ? { ...node, port: publicPort, link: containerNodeLink(node.link, publicPort) } : node;
   }
 
-  const portCheck = await execRemote(conn, "command -v ss >/dev/null || exit 1; for port in 443 8443; do if ! ss -ltnH \"sport = :$port\" | grep -q .; then printf '%s' \"$port\"; break; fi; done");
+  const candidates = requiredPort ? String(requiredPort) : "443 8443";
+  const portCheck = await execRemote(conn, `command -v ss >/dev/null || exit 1; for port in ${candidates}; do if ! ss -ltnH "sport = :$port" | grep -q .; then printf '%s' "$port"; break; fi; done`);
   const port = Number(portCheck.stdout.trim());
-  if (portCheck.code !== 0 || ![443, 8443].includes(port)) throw new Error("443 和 8443 端口都不可用，未创建节点。");
+  if (portCheck.code !== 0 || ![443, 8443].includes(port) || (requiredPort && port !== requiredPort)) {
+    throw new Error(requiredPort ? `容器内部 ${requiredPort} 端口不可用，未创建节点。` : "443 和 8443 端口都不可用，未创建节点。");
+  }
 
   const keys = crypto.generateKeyPairSync("x25519");
   const privateKey = keys.privateKey.export({ format: "der", type: "pkcs8" }).subarray(-32).toString("base64url");
@@ -377,7 +385,8 @@ async function createRealityNode(conn, panel, host) {
   }
   const listening = await execRemote(conn, `ss -ltnH 'sport = :${port}'`);
   if (!listening.stdout.trim()) throw new Error("节点已写入面板，但端口未监听，请检查 Xray 和防火墙。");
-  return nodeFromInbound(readback.data.obj, host);
+  const node = nodeFromInbound(readback.data.obj, host);
+  return publicPort ? { ...node, port: publicPort, link: containerNodeLink(node.link, publicPort) } : node;
 }
 
 async function readPanelResult(conn, host) {
@@ -395,10 +404,10 @@ async function isManagedInstall(conn) {
   return check.code === 0;
 }
 
-async function finishWithNode(job, conn, host) {
+async function finishWithNode(job, conn, host, options) {
   pushLog(job, "面板已核验，正在创建 VLESS + REALITY 节点。");
   try {
-    job.result.node = await createRealityNode(conn, job.result.panel, host);
+    job.result.node = await createRealityNode(conn, job.result.panel, host, options);
     job.result.inbounds = `VLESS + REALITY 入站已创建，端口 ${job.result.node.port} 正在监听。`;
     job.state = "succeeded";
     pushLog(job, "面板和节点均已通过读回校验。");
@@ -433,7 +442,137 @@ async function finishSecurity(job, conn, input, security) {
   }
 }
 
-async function install(job, input, security) {
+function lxdConnection(hostConnection, containerName) {
+  return { hostConnection, containerName };
+}
+
+async function managedLxdContainer(conn, container) {
+  const name = shellQuote(container.name);
+  const info = await execRemote(conn, `lxc info ${name} >/dev/null 2>&1`);
+  if (info.code !== 0) return false;
+  const marker = await execRemote(conn, `lxc config get ${name} user.x3ui-installer`);
+  if (marker.stdout.trim() !== "1") throw new Error("同名容器不属于本安装器，拒绝覆盖或删除。");
+  const panel = await execRemote(conn, `lxc config device get ${name} panel listen`);
+  const node = await execRemote(conn, `lxc config device get ${name} node listen`);
+  if (panel.stdout.trim() !== `tcp:0.0.0.0:${container.panelPort}` || node.stdout.trim() !== `tcp:0.0.0.0:${container.nodePort}`) {
+    throw new Error("容器映射端口与输入不一致，请填写原来的面板和节点端口。");
+  }
+  return true;
+}
+
+function externalizePanel(panel, container) {
+  panel.internalUrl = panel.panelUrl;
+  panel.panelUrl = containerPortUrl(panel.panelUrl, container.panelPort);
+  return panel;
+}
+
+async function readLxdResult(conn, input, container) {
+  const inside = lxdConnection(conn, container.name);
+  if (!await isManagedInstall(inside)) throw new Error("容器已存在，但不是完整的本安装器实例；不会覆盖。请检查或移除该容器。");
+  const result = await readPanelResult(inside, input.host);
+  externalizePanel(result.panel, container);
+  result.container = container;
+  return result;
+}
+
+async function finishLxdNode(job, conn, input, container) {
+  const inside = lxdConnection(conn, container.name);
+  await finishWithNode(job, inside, input.host, { publicPort: container.nodePort, requiredPort: 443 });
+  if (job.state === "succeeded") {
+    const panel = await execRemote(conn, `ss -ltnH 'sport = :${container.panelPort}'`);
+    const node = await execRemote(conn, `ss -ltnH 'sport = :${container.nodePort}'`);
+    if (!panel.stdout.trim() || !node.stdout.trim()) {
+      job.state = "partial";
+      job.error = "容器内节点已创建，但宿主机端口映射没有同时监听。";
+      pushLog(job, job.error);
+    }
+  }
+}
+
+async function installLxd(job, input, container) {
+  let conn;
+  let created = false;
+  let installed = false;
+  try {
+    conn = await connectSsh(input);
+    const identity = await execRemote(conn, "id -u");
+    if (identity.stdout.trim() !== "0") throw new Error("容器模式需要 root SSH 登录，不修改宿主机 SSH 设置。");
+    const available = await execRemote(conn, "command -v lxc >/dev/null && lxc storage list --format csv | grep -q '^default,' && lxc network list --format csv | grep -q '^lxdbr0,'");
+    if (available.code !== 0) throw new Error("目标机需要已初始化的 LXD（default 存储池、lxdbr0 网络）；未改动宿主机。");
+    const name = shellQuote(container.name);
+    if (await managedLxdContainer(conn, container)) {
+      pushLog(job, "检测到本安装器管理的同名容器，读取原有面板和节点，不重复安装。");
+      job.result = await readLxdResult(conn, input, container);
+      await finishLxdNode(job, conn, input, container);
+      return;
+    }
+
+    const ports = await execRemote(conn, `for port in ${container.panelPort} ${container.nodePort}; do if ss -ltnH "sport = :$port" | grep -q .; then echo "PORT_IN_USE=$port"; exit 10; fi; done`);
+    if (ports.code !== 0) throw new Error(ports.stdout.trim() || "容器端口检查失败。");
+    pushLog(job, `宿主机现有服务保持原样；正在创建独立 LXD 容器 ${container.name}。`);
+    const cache = await execRemote(conn, "lxc image info local:x3ui-ubuntu-22.04 >/dev/null 2>&1");
+    const image = cache.code === 0 ? "local:x3ui-ubuntu-22.04" : "ubuntu:22.04";
+    const launch = await execRemote(conn, `lxc launch ${image} ${name} -c user.x3ui-installer=1`, (line) => pushLog(job, line));
+    if (launch.code !== 0) {
+      const marker = await execRemote(conn, `lxc config get ${name} user.x3ui-installer`);
+      created = marker.stdout.trim() === "1";
+      throw new Error("LXD 容器启动失败；请检查镜像下载、存储池和网络。");
+    }
+    created = true;
+    for (const [device, listen, connect] of [
+      ["panel", container.panelPort, 2053], ["node", container.nodePort, 443]
+    ]) {
+      const proxy = await execRemote(conn, `lxc config device add ${name} ${device} proxy listen=tcp:0.0.0.0:${listen} connect=tcp:127.0.0.1:${connect}`);
+      if (proxy.code !== 0) throw new Error(`容器 ${device} 端口映射失败：${proxy.stderr.trim()}`);
+    }
+    const inside = lxdConnection(conn, container.name);
+    pushLog(job, "等待新容器获取 IPv4 地址和 DNS；首次启动可能需要一分钟。");
+    const networkReady = await execRemote(inside,
+      "for attempt in $(seq 1 60); do if ip -4 addr show dev eth0 2>/dev/null | grep -q 'inet ' && getent ahostsv4 archive.ubuntu.com >/dev/null 2>&1; then exit 0; fi; sleep 2; done; exit 1");
+    if (networkReady.code !== 0) throw new Error("新容器未取得 IPv4/DNS；请检查 LXD 桥接网络、DHCP 和宿主机防火墙。");
+    const packages = await execRemote(inside,
+      "export DEBIAN_FRONTEND=noninteractive; getent ahostsv4 archive.ubuntu.com >/dev/null && apt-get update -qq -o APT::Update::Error-Mode=any && apt-get install -y -qq curl openssl iproute2 ca-certificates && command -v curl && command -v openssl && command -v ss",
+      (line) => pushLog(job, line));
+    if (packages.code !== 0) throw new Error("容器基础依赖安装失败；宿主机原有面板未改动。");
+
+    const remoteDir = OFFLINE_MODE ? await uploadOfflineRelease(conn, job) : await uploadOnlineBootstrap(conn, job);
+    const architecture = await execRemote(conn, "uname -m");
+    const releaseFiles = OFFLINE_FILES[architecture.stdout.trim() === "amd64" ? "x86_64" : architecture.stdout.trim() === "arm64" ? "aarch64" : architecture.stdout.trim()];
+    if (!releaseFiles) throw new Error("目标机架构不受支持。");
+    const stagedNames = OFFLINE_MODE ? ["bootstrap.sh", ...releaseFiles.map(([file]) => file)] : ["bootstrap.sh"];
+    const directory = await execRemote(inside, "mkdir -p -m 700 /tmp/x3ui-installer-assets");
+    if (directory.code !== 0) throw new Error("无法在新容器中创建上传目录。");
+    for (const file of stagedNames) {
+      const copy = await execRemote(conn, `lxc file push ${shellQuote(`${remoteDir}/${file}`)} ${shellQuote(`${container.name}/tmp/x3ui-installer-assets/${file}`)}`);
+      if (copy.code !== 0) throw new Error(`无法把 ${file} 放入新容器。`);
+    }
+    const environment = OFFLINE_MODE
+      ? `X3UI_LOCAL_ASSET_DIR=/tmp/x3ui-installer-assets`
+      : `X3UI_BASE_URL=${shellQuote(MIRROR_BASE_URL)}`;
+    const bootstrap = await execRemote(inside, `${environment} X3UI_PUBLIC_HOST=${shellQuote(input.host)} X3UI_PANEL_PORT=2053 bash /tmp/x3ui-installer-assets/bootstrap.sh`, (line) => pushLog(job, line));
+    if (bootstrap.code !== 0 || !/^INSTALL_SUCCESS=1$/m.test(bootstrap.stdout)) {
+      throw new Error("新容器内的 3X-UI 安装未完成；宿主机现有面板未改动。");
+    }
+    installed = true;
+    await execRemote(inside, "rm -rf -- /tmp/x3ui-installer-assets");
+    await execRemote(conn, `rm -rf -- ${shellQuote(remoteDir)}`);
+    job.result = await readLxdResult(conn, input, container);
+    await finishLxdNode(job, conn, input, container);
+  } catch (error) {
+    if (created && !installed && conn) {
+      const rollback = await execRemote(conn, `lxc delete --force ${shellQuote(container.name)}`).catch(() => ({ code: 1 }));
+      pushLog(job, rollback.code === 0 ? "未完成的测试容器已删除；宿主机旧实例未动。" : "未完成的容器未能自动删除，请检查 LXD。");
+    }
+    job.state = "failed";
+    job.error = error.message || "容器安装失败。";
+    pushLog(job, job.error);
+  } finally {
+    conn?.end();
+  }
+}
+
+async function install(job, input, security, container) {
+  if (container) return installLxd(job, input, container);
   let conn;
   try {
     pushLog(job, "正在建立 SSH 连接。");
@@ -519,7 +658,23 @@ async function enableVerifiedSudo(conn, input) {
   sudoConnections.set(conn, input.password);
 }
 
-async function recover(job, input, security) {
+async function recover(job, input, security, container) {
+  if (container) {
+    let conn;
+    try {
+      conn = await connectSsh(input);
+      if (!await managedLxdContainer(conn, container)) throw new Error("找不到本安装器管理的同名容器。");
+      job.result = await readLxdResult(conn, input, container);
+      await finishLxdNode(job, conn, input, container);
+    } catch (error) {
+      job.state = "failed";
+      job.error = error.message || "容器结果找回失败。";
+      pushLog(job, job.error);
+    } finally {
+      conn?.end();
+    }
+    return;
+  }
   let conn;
   try {
     pushLog(job, "正在连接已安装的目标服务器。");
@@ -545,7 +700,47 @@ async function recover(job, input, security) {
   }
 }
 
-async function remove(job, input) {
+async function remove(job, input, _security, container) {
+  if (container) {
+    let conn;
+    try {
+      conn = await connectSsh(input);
+      const identity = await execRemote(conn, "id -u");
+      if (identity.stdout.trim() !== "0") throw new Error("移除容器需要 root SSH 登录。");
+      if (!await managedLxdContainer(conn, container)) throw new Error("找不到本安装器管理的同名容器。");
+      if (!await isManagedInstall(lxdConnection(conn, container.name))) throw new Error("容器没有完整的安装标记，拒绝删除。");
+      const stamp = await execRemote(conn, "date -u +%Y%m%dT%H%M%SZ");
+      const timestamp = stamp.stdout.trim();
+      if (!/^\d{8}T\d{6}Z$/.test(timestamp)) throw new Error("无法生成容器备份时间戳。");
+      const backupPath = `/root/x3ui-container-backups/${container.name}-${timestamp}.tar.gz`;
+      const backupDir = await execRemote(conn, "install -d -m 700 /root/x3ui-container-backups");
+      if (backupDir.code !== 0) throw new Error("无法建立容器备份目录；未删除容器。");
+      const stop = await execRemote(conn, `lxc stop ${shellQuote(container.name)}`);
+      if (stop.code !== 0) throw new Error("无法停止容器；未删除容器。");
+      try {
+        const backup = await execRemote(conn, `lxc export ${shellQuote(container.name)} ${shellQuote(backupPath)}`, (line) => pushLog(job, line));
+        if (backup.code !== 0) throw new Error("容器备份失败；未删除容器。");
+        const hash = await execRemote(conn, `sha256sum ${shellQuote(backupPath)}`);
+        const backupSha256 = hash.stdout.trim().split(/\s+/)[0];
+        if (hash.code !== 0 || !/^[a-f0-9]{64}$/.test(backupSha256)) throw new Error("容器备份校验失败；未删除容器。");
+        const deleted = await execRemote(conn, `lxc delete ${shellQuote(container.name)}`);
+        if (deleted.code !== 0) throw new Error("容器已有备份但删除失败，请检查 LXD。");
+        job.result = { removed: true, service: "容器已停止并移除", backupPath, backupSha256 };
+        job.state = "succeeded";
+        pushLog(job, "仅移除了带安装器标记的容器；宿主机 X-UI 与 SSH 设置未改动。");
+      } catch (error) {
+        await execRemote(conn, `lxc start ${shellQuote(container.name)}`).catch(() => {});
+        throw error;
+      }
+    } catch (error) {
+      job.state = "failed";
+      job.error = error.message || "容器移除失败。";
+      pushLog(job, job.error);
+    } finally {
+      conn?.end();
+    }
+    return;
+  }
   let conn;
   try {
     pushLog(job, "正在连接目标服务器并检查受管理的 3X-UI 安装。");
@@ -582,9 +777,11 @@ async function remove(job, input) {
 function queueJob(req, res, worker, kind) {
   let input;
   let security;
+  let container;
   try {
     input = installInput(req.body || {});
     security = securityInput(req.body || {});
+    container = containerInput(req.body || {});
     if (!OFFLINE_MODE && (kind === "remove" || security.enabled)) {
       if (process.env.X3UI_REQUIRE_ACCESS !== "1" || !ACCESS_PASSWORD || ADMIN_ACTION_PASSWORD.length < 16 || ADMIN_ACTION_PASSWORD === ACCESS_PASSWORD) {
         return res.status(503).json({ error: "线上 SSH 安全操作尚未配置独立管理口令。" });
@@ -598,6 +795,8 @@ function queueJob(req, res, worker, kind) {
       }
     }
     if (security.enabled && input.username !== "root") throw new Error("创建管理员和修改 SSH 配置时，请先使用 root 登录；完成后可用新管理员找回结果。");
+    if (container && security.enabled) throw new Error("容器模式不修改宿主机 SSH 账号或 root 登录设置，请取消 SSH 安全选项。");
+    if (container && input.username !== "root") throw new Error("LXD 容器模式需要 root SSH 登录。");
   } catch (error) {
     return res.status(400).json({ error: error.message });
   }
@@ -609,7 +808,7 @@ function queueJob(req, res, worker, kind) {
   const job = { id, kind, host: input.host, state: "running", logs: [], result: null, error: null };
   jobs.set(id, job);
   setTimeout(() => jobs.delete(id), 30 * 60 * 1000).unref();
-  void worker(job, input, security);
+  void worker(job, input, security, container);
   res.status(202).json({ id });
 }
 

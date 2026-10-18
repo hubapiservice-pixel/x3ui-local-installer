@@ -13,6 +13,7 @@ Password-protected web installer for a pinned, self-hosted 3X-UI v3.9.0 release 
 
 ## Installation behavior
 
+- Version 1.4.0 adds an optional LXD container mode to the source and offline packages. It creates a separately named `x3ui-*` Ubuntu 22.04 container, maps configurable external panel and node ports to internal 2053/443, and leaves the host's existing X3-UI untouched. The target must already have an initialized LXD `default` storage pool and `lxdbr0` bridge; its firewall and cloud security group must allow the selected ports. The installer waits for IPv4 and DNS before installing dependencies, then uploads the pinned payload. It refuses to overwrite an unrecognized same-name container. Container mode requires root SSH and does not change host SSH hardening. This describes the new source/package, not a confirmed deployment to the public 193 site.
 - First-time installation and SSH hardening require root SSH. Recovery and removal also accept a separately verified sudo-capable administrator after root SSH has been disabled.
 - Existing 3X-UI files or an occupied panel port `2053` stop the installation before changes are made.
 - The compatibility bootstrap verifies the panel archive and Xray binary before writing the installation directory. Existing managed installations are read back, not silently downgraded.
@@ -49,7 +50,7 @@ The default bind address is `127.0.0.1:4178`. Production uses `X3UI_BIND_HOST` a
 
 The Windows x64 ZIP bundles Node.js 24.15.0, Xray 26.3.27 for local node testing, the pinned 3X-UI/Linux Xray payloads, all 14 desktop/mobile client installers, and the illustrated guide. It runs locally and SFTP-uploads the Linux payloads to the target VPS; the target does not fetch upstream packages. iOS clients remain App Store links.
 
-After downloading `X3-UI-Offline-Installer-Windows-x64-v1.3.0.zip`, verify its adjacent `.sha256` file, extract the whole ZIP, and double-click `Start-X3UI.cmd`. It opens the installer on `127.0.0.1` without installing Node.js system-wide or requiring administrator rights on Windows. Node testing on Windows follows the system route; the macOS `en0` interface selector is hidden. A first run may still show Windows security prompts because this package has no publisher code-signing certificate. Do not disable Defender or SmartScreen globally.
+After downloading `X3-UI-Offline-Installer-Windows-x64-v1.4.0.zip`, verify its adjacent `.sha256` file, extract the whole ZIP, and double-click `Start-X3UI.cmd`. It opens the installer on `127.0.0.1` without installing Node.js system-wide or requiring administrator rights on Windows. Node testing on Windows follows the system route; the macOS `en0` interface selector is hidden. A first run may still show Windows security prompts because this package has no publisher code-signing certificate. Do not disable Defender or SmartScreen globally.
 
 The reproducible build runs on Windows x64 with Node.js 24.15.0 and PowerShell 7:
 
@@ -60,7 +61,7 @@ npm run build:offline:win
 npm run smoke:offline:win
 ```
 
-The build downloads only fixed-version assets, verifies SHA-256 before packaging, and writes the ZIP and checksum under `dist/`. The smoke test extracts that ZIP, runs the bundled executables and launcher, checks the loopback-only API and local client download, then stops its test process. GitHub Actions runs these checks before publishing the Windows release. This is a Windows runner check, not a claim that every consumer PC or network path has been tested.
+The build downloads only fixed-version assets, verifies SHA-256 before packaging, and writes the ZIP and checksum under `dist/`. The smoke test extracts that ZIP, runs the bundled executables and launcher, checks the loopback-only API and local client download, then stops its test process. The v1.4.0 release workflow additionally requires a real installation and node probe from the extracted Windows package against a separately named LXD container. GitHub Actions runs these checks before publishing the Windows release. This is a Windows runner check, not a claim that every consumer PC or network path has been tested.
 
 ## Separate offline macOS edition
 
@@ -71,7 +72,7 @@ node scripts/fetch-offline-assets.mjs
 bash scripts/build-offline-macos-app.sh
 ```
 
-The fetch step copies assets from the self-hosted 193 mirror into `offline-assets/` and checks the pinned hashes in the release and client manifests. The build step also checks the bundled macOS probe binary, then writes `dist/X3-UI-Offline-Installer-macOS-arm64-v1.2.1.zip` and its `.sha256` file. After extraction, double-click the app. It opens a loopback-only page and uses its embedded runtime; Node.js does not need to be installed on the receiving Mac. The ZIP is ad-hoc signed but not notarized, so macOS may require Control-click and Open on first launch.
+The fetch step copies assets from the self-hosted 193 mirror into `offline-assets/` and checks the pinned hashes in the release and client manifests. The build step also checks the bundled macOS probe binary, then writes `dist/X3-UI-Offline-Installer-macOS-arm64-v1.4.0.zip` and its `.sha256` file. After extraction, double-click the app. It opens a loopback-only page and uses its embedded runtime; Node.js does not need to be installed on the receiving Mac. The ZIP is ad-hoc signed but not notarized, so macOS may require Control-click and Open on first launch.
 
 Only the SSH connection to the target VPS is needed during installation. The app detects the target CPU, SFTP-uploads the matching files to a root-only temporary directory, checks them again with `sha256sum`, and runs the offline bootstrap without `curl` or an upstream fallback. The target must be a clean Linux x86_64/aarch64 system with root SSH, systemd, tar, sha256sum, and openssl. Existing 3X-UI files are not overwritten. A successful install removes only its temporary upload files; a failed upload or install leaves them for diagnosis. The result confirms the server-side panel and listener. The local probe performs a separate end-to-end HTTPS request through a VLESS + REALITY TCP node from the Mac, including Shadowrocket's encoded VLESS-encryption links; it can optionally bind to an `en` physical interface. Other protocols must be tested in a compatible client.
 

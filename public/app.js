@@ -20,6 +20,8 @@ const grantSudo = form.elements.namedItem("grantSudo");
 const disableRootSsh = form.elements.namedItem("disableRootSsh");
 const adminUsername = form.elements.namedItem("adminUsername");
 const adminPassword = form.elements.namedItem("adminPassword");
+const containerFields = document.querySelector("#container-fields");
+const securityDetails = document.querySelector("#admin-security");
 let accessCode = "";
 let currentMode = "install";
 let isOffline = false;
@@ -39,21 +41,33 @@ fetch("api/edition", { cache: "no-store" }).then((response) => response.json()).
   document.querySelector("#online-auth").classList.add("hidden");
   document.querySelector("#offline-note").classList.remove("hidden");
   document.querySelector("#ios-offline-note").classList.remove("hidden");
-  button.textContent = "上传并安装 3X-UI";
+  updateSecurityControls();
 }).catch(() => {});
 
 function updateSecurityControls() {
-  grantSudo.disabled = !createAdminUser.checked;
+  const isolated = form.querySelector('input[name="installMode"]:checked').value === "lxd";
+  containerFields.classList.toggle("hidden", !isolated);
+  containerFields.querySelectorAll("input").forEach((input) => { input.disabled = !isolated; });
+  securityDetails.classList.toggle("hidden", isolated);
+  if (isolated) {
+    createAdminUser.checked = false;
+    grantSudo.checked = false;
+    disableRootSsh.checked = false;
+  }
+  createAdminUser.disabled = isolated;
+  grantSudo.disabled = isolated || !createAdminUser.checked;
   if (grantSudo.disabled) grantSudo.checked = false;
-  disableRootSsh.disabled = !grantSudo.checked;
+  disableRootSsh.disabled = isolated || !grantSudo.checked;
   if (disableRootSsh.disabled) disableRootSsh.checked = false;
-  adminUsername.disabled = !createAdminUser.checked;
-  adminPassword.disabled = !createAdminUser.checked;
-  adminUsername.required = createAdminUser.checked;
-  adminPassword.required = createAdminUser.checked;
+  adminUsername.disabled = isolated || !createAdminUser.checked;
+  adminPassword.disabled = isolated || !createAdminUser.checked;
+  adminUsername.required = !isolated && createAdminUser.checked;
+  adminPassword.required = !isolated && createAdminUser.checked;
+  button.textContent = isolated ? "在新容器安装 3X-UI" : isOffline ? "上传并安装 3X-UI" : "安装兼容版 3X-UI";
 }
 createAdminUser.addEventListener("change", updateSecurityControls);
 grantSudo.addEventListener("change", updateSecurityControls);
+form.querySelectorAll('input[name="installMode"]').forEach((radio) => radio.addEventListener("change", updateSecurityControls));
 updateSecurityControls();
 
 function showView(view) {
@@ -137,6 +151,8 @@ async function poll(id, failures = 0) {
   logDetails.open = false;
   result.classList.remove("hidden");
   fill("#service-state", job.result.service);
+  document.querySelector("#container-result").classList.toggle("hidden", !job.result.container);
+  if (job.result.container) fill("#container-name", job.result.container.name);
   const release = job.result.panel.releaseVersion;
   const core = job.result.panel.coreVersion;
   fill("#installed-version", release && core ? `3X-UI ${release} / Xray ${core}` : "已有实例，版本未记录");
@@ -349,7 +365,10 @@ removeButton.addEventListener("click", () => {
   for (const name of ["accessCode", "actionCode", "host", "port", "username", "password"]) {
     if (!form.elements.namedItem(name).reportValidity()) return;
   }
-  document.querySelector("#remove-target").textContent = form.elements.namedItem("host").value.trim();
+  const isolated = form.querySelector('input[name="installMode"]:checked').value === "lxd";
+  document.querySelector("#remove-target").textContent = isolated
+    ? `${form.elements.namedItem("containerName").value.trim()} @ ${form.elements.namedItem("host").value.trim()}`
+    : form.elements.namedItem("host").value.trim();
   removeDialog.showModal();
 });
 document.querySelector("#cancel-remove").addEventListener("click", () => removeDialog.close());

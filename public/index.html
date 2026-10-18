@@ -33,6 +33,16 @@
           </div>
           <p id="offline-note" class="offline-note hidden">安装文件已内置；仅通过 SSH 上传到目标机。</p>
           <form id="install-form">
+            <fieldset class="install-mode" aria-label="安装位置">
+              <label><input type="radio" name="installMode" value="host" checked /><span>直接安装</span></label>
+              <label><input type="radio" name="installMode" value="lxd" /><span>新建容器</span></label>
+            </fieldset>
+            <div id="container-fields" class="container-fields hidden">
+              <label class="full-field">容器名称<input name="containerName" value="x3ui-isolated" pattern="x3ui-[a-z0-9][a-z0-9-]*" autocomplete="off" disabled /></label>
+              <label>面板公网端口<input name="containerPanelPort" type="number" value="22054" min="1024" max="65535" disabled /></label>
+              <label>节点公网端口<input name="containerNodePort" type="number" value="18445" min="1024" max="65535" disabled /></label>
+              <p class="full-field">目标机需已初始化 LXD。宿主机原有 X-UI、SSH 用户和端口不会被替换；公网防火墙需放行所选端口。</p>
+            </div>
             <div id="online-auth" class="auth-fields">
               <label>页面访问密码<input name="accessCode" type="password" autocomplete="current-password" /></label>
               <label>管理操作口令<input name="actionCode" type="password" autocomplete="off" title="创建管理员或移除面板时使用" /></label>
@@ -65,6 +75,7 @@
               <p>首次安装使用 root。启用管理员并禁用 root 后，可用新用户和 sudo -i 找回结果。SSH 密码只用于当前任务，不写入磁盘、浏览器存储或日志。</p>
               <p>移除仅针对本安装器管理的面板，先在目标机建立受限备份；不会删除 SSH 用户、sudo 权限或修改 root 登录设置。</p>
               <p>Xray 26.3.27 是兼容旧客户端的版本，不含较新内核的后续修复；已有安装不会被自动降级。</p>
+              <p>新建容器使用 LXD Ubuntu 22.04 基础镜像，需目标机可访问 Ubuntu 软件源；3X-UI 和 Xray 仍使用此安装器固定的发行文件。</p>
             </details>
           </form>
         </section>
@@ -87,6 +98,7 @@
             <dl class="result-grid">
               <div><dt>服务状态</dt><dd><strong id="service-state"></strong></dd></div>
               <div><dt>安装版本</dt><dd><strong id="installed-version"></strong></dd></div>
+              <div id="container-result" class="wide-result hidden"><dt>LXD 容器</dt><dd><strong id="container-name"></strong></dd></div>
               <div class="wide-result"><dt>控制面板</dt><dd><a id="panel-url" target="_blank" rel="noreferrer"></a></dd></div>
               <div><dt>面板用户名</dt><dd><code id="panel-user"></code></dd></div>
               <div><dt>面板密码</dt><dd><code id="panel-password"></code></dd></div>

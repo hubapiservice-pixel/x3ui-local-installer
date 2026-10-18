@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$version = "1.3.0"
+$version = "1.4.0"
 $dist = Join-Path $root "dist"
 $zip = Join-Path $dist "X3-UI-Offline-Installer-Windows-x64-v$version.zip"
 $checksum = "$zip.sha256"
@@ -59,7 +59,7 @@ try {
   Copy-Item (Join-Path $root "packaging\Start-X3UI.cmd") (Join-Path $bundle "Start-X3UI.cmd")
   Copy-Item (Join-Path $root "packaging\FIRST-OPEN-WINDOWS.txt") (Join-Path $bundle "FIRST-OPEN-WINDOWS.txt")
 
-  foreach ($file in @("server.mjs", "security.mjs", "remove.mjs", "probe.mjs", "package.json", "package-lock.json")) {
+  foreach ($file in @("server.mjs", "container.mjs", "security.mjs", "remove.mjs", "probe.mjs", "package.json", "package-lock.json")) {
     Copy-Item (Join-Path $root $file) (Join-Path $app $file)
   }
   Copy-Item -Recurse (Join-Path $root "public") (Join-Path $app "public")

@@ -1,7 +1,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $root = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$zip = Join-Path $root "dist\X3-UI-Offline-Installer-Windows-x64-v1.3.0.zip"
+$zip = Join-Path $root "dist\X3-UI-Offline-Installer-Windows-x64-v1.4.0.zip"
 $checksum = "$zip.sha256"
 $expected = (Get-Content $checksum -Raw).Split(" ")[0]
 $actual = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()

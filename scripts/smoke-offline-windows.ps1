@@ -15,6 +15,10 @@ try {
   Expand-Archive -Path $zip -DestinationPath $stage
   $node = Join-Path $bundle "runtime\node.exe"
   $xray = Join-Path $bundle "app\offline-assets\tools\xray-windows-x64.exe"
+  $bootstrap = Join-Path $bundle "app\release\offline-v3.9.0-xray-26.3.27\bootstrap.sh"
+  if ((Get-Content -Path $bootstrap -Raw).Contains("`r")) {
+    throw "Bundled Linux bootstrap.sh has CRLF line endings."
+  }
   if ((& $node --version) -ne "v24.15.0") { throw "Bundled Node.js did not run." }
   if ((& $xray version | Select-Object -First 1) -notmatch "Xray 26\.3\.27") { throw "Bundled Xray did not run." }
   if ((Get-ChildItem -File (Join-Path $bundle "app\offline-assets\clients")).Count -ne 14) {

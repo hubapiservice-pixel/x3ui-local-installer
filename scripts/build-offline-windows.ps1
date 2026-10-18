@@ -41,6 +41,10 @@ New-Item -ItemType Directory -Force -Path $dist, $tools | Out-Null
 
 & node (Join-Path $root "scripts\fetch-offline-assets.mjs")
 if ($LASTEXITCODE -ne 0) { throw "Offline assets failed verification or download." }
+$bootstrap = Join-Path $root "release\offline-v3.9.0-xray-26.3.27\bootstrap.sh"
+if ((Get-Content -Path $bootstrap -Raw).Contains("`r")) {
+  throw "Linux bootstrap.sh has CRLF line endings; refusing to package it for Windows."
+}
 
 $nodeArchive = Join-Path $tools "node-v24.15.0-win-x64.zip"
 $xrayArchive = Join-Path $tools "Xray-windows-64-v26.3.27.zip"
